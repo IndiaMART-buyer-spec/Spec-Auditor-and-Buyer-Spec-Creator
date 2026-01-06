@@ -4,7 +4,7 @@ import AuditResults from "./components/AuditResults";
 import URLInput from "./components/URLInput";
 import Stage2Results from "./components/Stage2Results";
 import Stage3Results from "./components/Stage3Results";
-import { auditSpecificationsWithGemini, extractISQWithGemini } from "./utils/api";
+import { auditSpecificationsWithGemini, extractISQWithGemini, generateBuyerISQsFromSpecs } from "./utils/api";
 import { generateAuditExcel, generateCombinedExcel } from "./utils/excel";
 import type { AuditInput as AuditInputType, AuditResult, UploadedSpec, ISQ, InputData } from "./types";
 import { Download, RefreshCw } from "lucide-react";
@@ -62,7 +62,21 @@ function App() {
       };
 
       const result = await extractISQWithGemini(inputData, submittedUrls);
-      setIsqs(result);
+
+      console.log("🎯 Generating buyer ISQs from common specs...");
+      setProcessingStage("Generating buyer ISQs...");
+
+      const buyerISQs = generateBuyerISQsFromSpecs(originalSpecs, {
+        config: result.config,
+        keys: result.keys
+      });
+
+      console.log("✅ Buyer ISQs generated:", buyerISQs);
+
+      setIsqs({
+        ...result,
+        buyers: buyerISQs
+      });
       setStage("final_results");
       setActiveTab("stage1");
     } catch (err) {

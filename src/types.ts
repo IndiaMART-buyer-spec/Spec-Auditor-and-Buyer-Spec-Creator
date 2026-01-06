@@ -78,7 +78,7 @@ export interface AuditInput {
 
 export interface AuditResult {
   specification: string;
-  status: "correct" | "incorrect";
+  status: "correct" | "incorrect" | "not-audited";
   explanation?: string;
   problematic_options?: string[];
 }

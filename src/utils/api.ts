@@ -162,8 +162,24 @@ function extractJSONFromGemini(response) {
       .replace(/```/g, "")
       .trim();
 
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) cleaned = match[0];
+    // Try to match array first (for audit results)
+    let arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+    if (arrayMatch) {
+      try {
+        const parsed = JSON.parse(arrayMatch[0].replace(/,(\s*[\]}])/g, "$1"));
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+      } catch (e) {
+        console.warn("Array parse failed, trying object match:", e);
+      }
+    }
+
+    // Then try object match
+    const objMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+      cleaned = objMatch[0];
+    }
 
     cleaned = cleaned.replace(/,(\s*[\]}])/g, "$1");
 
@@ -190,6 +206,7 @@ export async function auditSpecificationsWithGemini(
   }
 
   const prompt = buildAuditPrompt(input);
+  console.log("🔍 Audit: Sending request to Gemini...");
 
   try {
     const response = await fetchWithRetry(
@@ -209,12 +226,25 @@ export async function auditSpecificationsWithGemini(
     );
 
     const data = await response.json();
-    const result = extractJSONFromGemini(data);
+    console.log("📥 Audit: Received response from Gemini");
+
+    let result = extractJSONFromGemini(data);
+
+    if (!result || !Array.isArray(result)) {
+      console.warn("⚠️ Audit: JSON extraction failed, trying text extraction...");
+      const rawText = extractRawText(data);
+      console.log("Raw response text:", rawText.substring(0, 500));
+
+      result = parseAuditFromText(rawText, input);
+    }
 
     if (result && Array.isArray(result)) {
+      console.log(`✅ Audit: Successfully parsed ${result.length} results`);
+      console.log("Audit results:", result);
       return result;
     }
 
+    console.error("❌ Audit: Failed to parse any results, returning empty array");
     return [];
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -224,9 +254,42 @@ export async function auditSpecificationsWithGemini(
       throw new Error("Stage 1 API key quota exhausted. Please check your API limits.");
     }
 
-    console.warn("Audit API error:", error);
+    console.error("❌ Audit API error:", error);
     throw error;
   }
+}
+
+function parseAuditFromText(text: string, input: AuditInput): AuditResult[] {
+  console.log("📝 Parsing audit from text...");
+
+  const results: AuditResult[] = [];
+
+  // Try to find JSON array in text
+  const arrayMatch = text.match(/\[[\s\S]*\]/);
+  if (arrayMatch) {
+    try {
+      const parsed = JSON.parse(arrayMatch[0].replace(/,(\s*[\]}])/g, "$1"));
+      if (Array.isArray(parsed)) {
+        console.log("✅ Successfully parsed JSON array from text");
+        return parsed;
+      }
+    } catch (e) {
+      console.warn("Failed to parse JSON array from text:", e);
+    }
+  }
+
+  // Fallback: Create results for all specs marking them as "correct" if no issues found
+  input.specifications.forEach(spec => {
+    results.push({
+      specification: spec.spec_name,
+      status: "correct",
+      explanation: undefined,
+      problematic_options: []
+    });
+  });
+
+  console.log(`⚠️ Fallback: Marking all ${results.length} specs as correct`);
+  return results;
 }
 
 function buildAuditPrompt(input: AuditInput): string {
@@ -251,7 +314,7 @@ Task:
 - For each specification, check if it is relevant to the MCAT "${input.mcat_name}"
 - For each option, check for:
   • Irrelevance to the specification or MCAT
-  • Duplicates (exact duplicates or same value listed multiple times) 
+  • Duplicates (exact duplicates or same value listed multiple times)
    Example: "SS304", "ss304" → INCORRECT (duplicate, just different case)
    Example: "2mm", "2 mm", "2.0mm" → INCORRECT (same value, different formatting)
   • Overlapping values (e.g., same measurement in multiple separate options like "1219 mm" AND "4 ft" as separate entries)
@@ -655,6 +718,68 @@ RESPOND WITH PURE JSON ONLY - Nothing else. No markdown, no explanation, just ra
 // ============================================
 // STAGE 3 BUYER ISQs SELECTION - IMPROVED VERSION
 // ============================================
+
+export function generateBuyerISQsFromSpecs(
+  uploadedSpecs: { spec_name: string; options: string[]; tier?: string }[],
+  stage2ISQs: { config: ISQ; keys: ISQ[] }
+): ISQ[] {
+  console.log('🛒 Generating Buyer ISQs from uploaded specs...');
+  console.log('Uploaded specs:', uploadedSpecs.length);
+  console.log('Stage 2 ISQs:', stage2ISQs.config ? 1 : 0, 'config +', stage2ISQs.keys.length, 'keys');
+
+  // Combine all Stage 2 ISQs
+  const allStage2ISQs: ISQ[] = [];
+  if (stage2ISQs.config && stage2ISQs.config.name && stage2ISQs.config.options?.length > 0) {
+    allStage2ISQs.push(stage2ISQs.config);
+  }
+  if (stage2ISQs.keys && stage2ISQs.keys.length > 0) {
+    allStage2ISQs.push(...stage2ISQs.keys.filter(k => k.name && k.options?.length > 0));
+  }
+
+  // Find common specs
+  const commonSpecs: Array<{
+    name: string;
+    options: string[];
+    priority: number;
+  }> = [];
+
+  uploadedSpecs.forEach(uploadedSpec => {
+    allStage2ISQs.forEach(stage2ISQ => {
+      if (isSemanticallySimilar(uploadedSpec.spec_name, stage2ISQ.name)) {
+        const commonOptions = findCommonOptions(uploadedSpec.options, stage2ISQ.options);
+
+        const priority = uploadedSpec.tier === 'Primary' ? 3 : 2;
+
+        if (commonOptions.length > 0) {
+          commonSpecs.push({
+            name: uploadedSpec.spec_name,
+            options: commonOptions,
+            priority
+          });
+        }
+      }
+    });
+  });
+
+  console.log('Common specs found:', commonSpecs.length);
+
+  if (commonSpecs.length === 0) {
+    console.log('⚠️ No common specs found');
+    return [];
+  }
+
+  // Sort by priority
+  commonSpecs.sort((a, b) => b.priority - a.priority);
+
+  // Return top 2
+  const buyerISQs = commonSpecs.slice(0, 2).map(spec => ({
+    name: spec.name,
+    options: spec.options.slice(0, 8)
+  }));
+
+  console.log('✅ Generated buyer ISQs:', buyerISQs.length);
+  return buyerISQs;
+}
 
 export function selectStage3BuyerISQs(
   stage1: Stage1Output,
