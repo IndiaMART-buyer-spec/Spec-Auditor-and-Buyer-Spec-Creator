@@ -695,7 +695,7 @@ INSTRUCTIONS (Step by Step):
    - Content inside tabs or expandable sections
 
 2. **Combine equivalent specifications and options**:
-   - Merge equivalent specifications, e.g., `"Material Grade"`, `"Grade"`, `"SS 304"`, `"304"` → `"Grade"`  
+   - Merge equivalent specifications, e.g., "Material Grade", "Grade", "SS 304", "304" → "Grade" 
    - Merge options that mean the same, e.g., `"304L"` and `"SS 304L"` → `"SS 304L"`  
    - Count the frequency of each specification and option after combining
 
