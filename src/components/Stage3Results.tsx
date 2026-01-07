@@ -781,12 +781,14 @@ function areOptionsSimilar(opt1: string, opt2: string): boolean {
   return areOptionsSmartSimilar(opt1, opt2);
 }
 // Helper: Convert to millimeters
+// Helper: Convert to millimeters with decimal handling
 function convertToMM(text: string): number | null {
-  const match = text.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m|inch|in|ft|")?/);
+  // Match numbers with optional decimals and units
+  const match = text.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m|inch|in|ft|feet|")?/i);
   if (!match) return null;
   
   const value = parseFloat(match[1]);
-  const unit = match[2] || '';
+  const unit = match[2]?.toLowerCase() || '';
   
   switch (unit) {
     case 'mm': return value;
@@ -795,8 +797,13 @@ function convertToMM(text: string): number | null {
     case 'inch':
     case 'in':
     case '"': return value * 25.4;
-    case 'ft': return value * 304.8;
-    default: return value < 100 ? value : value * 25.4; // Guess
+    case 'ft':
+    case 'feet': return value * 304.8;
+    default: 
+      // If no unit and value < 100, assume mm
+      if (value < 100) return value;
+      // If value is large with decimal, still assume mm
+      return value;
   }
 }
 
