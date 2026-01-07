@@ -265,8 +265,8 @@ function extractCommonAndBuyerSpecs(
   const commonSpecs = findCommonSpecs(stage1AllSpecs, stage2AllISQs);
   console.log('🎯 Found common specs:', commonSpecs.length);
   
-  // STEP 4: Select Buyer ISQs (top 2 by priority)
-  const buyerISQs = selectBuyerISQs(commonSpecs);
+  // STEP 4: Select Buyer ISQs (top 2 by priority) - PASS stage1AllSpecs
+  const buyerISQs = selectBuyerISQs(commonSpecs, stage1AllSpecs);
   console.log('🛒 Buyer ISQs:', buyerISQs.length);
   
   return {
