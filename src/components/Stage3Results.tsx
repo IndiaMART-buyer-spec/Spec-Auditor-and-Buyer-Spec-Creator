@@ -735,7 +735,7 @@ function findCommonOptions(stage1Options: string[], stage2Options: string[]): st
     });
   }
   
-  return common.slice(0, 8);
+  return common;
 }
 
 // Helper: Check if options are similar
