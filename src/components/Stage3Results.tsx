@@ -557,57 +557,185 @@ function normalizeSpecName(name: string): string {
   return filteredWords.join(' ').trim();
 }
 
-// Helper: Find common options between Stage 1 and Stage 2
+
 // Helper: Find common options between Stage 1 and Stage 2 with improved matching
+// Helper: Find common options between Stage 1 and Stage 2 with range handling
 function findCommonOptions(stage1Options: string[], stage2Options: string[]): string[] {
   const common: string[] = [];
-  const seenStage2Indices = new Set<number>();
-  const seenOptions = new Set<string>();
+  const seen = new Set<string>();
   
-  // First pass: Exact matches (case-insensitive)
+  // Helper: Check if option is a range
+  const isRange = (option: string): boolean => {
+    return /(?:\d+(?:\.\d+)?\s*(?:to|-|–)\s*\d+(?:\.\d+)?)/i.test(option);
+  };
+  
+  // Helper: Parse range and get all numbers with 0.1 step
+  const parseRange = (range: string): number[] => {
+    const numbers: number[] = [];
+    
+    // Match patterns: "0.1mm to 6mm", "0.1-6mm", "0.1 mm - 6 mm"
+    const match = range.match(/(\d+(?:\.\d+)?)\s*(?:to|-|–)\s*(\d+(?:\.\d+)?)/i);
+    if (!match) return numbers;
+    
+    const start = parseFloat(match[1]);
+    const end = parseFloat(match[2]);
+    
+    // Generate numbers with 0.1 step
+    const step = 0.1;
+    let current = Math.ceil(start * 10) / 10; // Round up to nearest 0.1
+    
+    while (current <= end) {
+      // Keep one decimal precision
+      numbers.push(Math.round(current * 10) / 10);
+      current += step;
+    }
+    
+    return numbers;
+  };
+  
+  // Helper: Get unit from option
+  const getUnit = (option: string): string => {
+    const match = option.match(/(mm|cm|m|inch|in|ft|")/i);
+    return match ? match[1].toLowerCase() : 'mm';
+  };
+  
+  // Helper: Extract number from option
+  const extractNumber = (option: string): number | null => {
+    const match = option.match(/(\d+(?:\.\d+)?)/);
+    return match ? parseFloat(match[1]) : null;
+  };
+  
+  // Helper: Normalize unit comparison
+  const normalizeUnit = (unit1: string, unit2: string): boolean => {
+    if (unit1 === unit2) return true;
+    // Treat missing unit as 'mm'
+    if ((unit1 === 'mm' && unit2 === '') || (unit1 === '' && unit2 === 'mm')) return true;
+    return false;
+  };
+  
+  // First pass: Exact matches
   stage1Options.forEach(opt1 => {
     const cleanOpt1 = opt1.trim().toLowerCase();
     
-    // Find exact match in Stage 2
-    stage2Options.forEach((opt2, j) => {
-      if (seenStage2Indices.has(j)) return;
-      
-      const cleanOpt2 = opt2.trim().toLowerCase();
-      
-      // Exact string match
-      if (cleanOpt1 === cleanOpt2 && !seenOptions.has(cleanOpt1)) {
-        common.push(opt1); // Keep original formatting from Stage 1
-        seenStage2Indices.add(j);
-        seenOptions.add(cleanOpt1);
-      }
-    });
+    // Check for exact match
+    const exactMatch = stage2Options.find(opt2 => 
+      opt2.trim().toLowerCase() === cleanOpt1
+    );
+    
+    if (exactMatch && !seen.has(cleanOpt1)) {
+      common.push(opt1); // Keep original formatting
+      seen.add(cleanOpt1);
+    }
   });
   
-  // Second pass: Smart similarity matches (with decimal handling)
+  // Second pass: Range vs Discrete matching
+  // Check discrete options from Stage 2 that are in Stage 1 ranges
+  stage2Options.forEach(opt2 => {
+    if (common.length >= 8) return;
+    
+    const cleanOpt2 = opt2.trim().toLowerCase();
+    if (seen.has(cleanOpt2)) return;
+    
+    const isOpt2Range = isRange(opt2);
+    
+    // If opt2 is discrete, check if it's in any Stage 1 range
+    if (!isOpt2Range) {
+      const num2 = extractNumber(opt2);
+      const unit2 = getUnit(opt2);
+      
+      if (num2 !== null) {
+        stage1Options.forEach(opt1 => {
+          if (common.length >= 8) return;
+          
+          const isOpt1Range = isRange(opt1);
+          
+          if (isOpt1Range) {
+            const rangeNumbers = parseRange(opt1);
+            const unit1 = getUnit(opt1);
+            
+            // Check if units match and number is in range
+            if (normalizeUnit(unit1, unit2)) {
+              const isInRange = rangeNumbers.some(rangeNum => 
+                Math.abs(rangeNum - num2) < 0.01
+              );
+              
+              if (isInRange && !seen.has(cleanOpt2)) {
+                common.push(opt2); // Add the discrete option from Stage 2
+                seen.add(cleanOpt2);
+              }
+            }
+          }
+        });
+      }
+    }
+  });
+  
+  // Third pass: Check discrete options from Stage 1 that are in Stage 2 ranges
   if (common.length < 8) {
     stage1Options.forEach(opt1 => {
       if (common.length >= 8) return;
       
       const cleanOpt1 = opt1.trim().toLowerCase();
-      if (seenOptions.has(cleanOpt1)) return;
+      if (seen.has(cleanOpt1)) return;
       
-      stage2Options.forEach((opt2, j) => {
+      const isOpt1Range = isRange(opt1);
+      
+      // If opt1 is discrete, check if it's in any Stage 2 range
+      if (!isOpt1Range) {
+        const num1 = extractNumber(opt1);
+        const unit1 = getUnit(opt1);
+        
+        if (num1 !== null) {
+          stage2Options.forEach(opt2 => {
+            if (common.length >= 8) return;
+            
+            const isOpt2Range = isRange(opt2);
+            
+            if (isOpt2Range) {
+              const rangeNumbers = parseRange(opt2);
+              const unit2 = getUnit(opt2);
+              
+              // Check if units match and number is in range
+              if (normalizeUnit(unit1, unit2)) {
+                const isInRange = rangeNumbers.some(rangeNum => 
+                  Math.abs(rangeNum - num1) < 0.01
+                );
+                
+                if (isInRange && !seen.has(cleanOpt1)) {
+                  common.push(opt1); // Add the discrete option from Stage 1
+                  seen.add(cleanOpt1);
+                }
+              }
+            }
+          });
+        }
+      }
+    });
+  }
+  
+  // Fourth pass: Discrete vs Discrete similarity (for non-range cases)
+  if (common.length < 8) {
+    stage1Options.forEach(opt1 => {
+      if (common.length >= 8) return;
+      
+      const cleanOpt1 = opt1.trim().toLowerCase();
+      if (seen.has(cleanOpt1)) return;
+      if (isRange(opt1)) return; // Skip ranges
+      
+      stage2Options.forEach(opt2 => {
         if (common.length >= 8) return;
-        if (seenStage2Indices.has(j)) return;
+        if (isRange(opt2)) return; // Skip ranges
         
-        const cleanOpt2 = opt2.trim().toLowerCase();
-        
-        // Use SMART matching with decimal handling
-        if (areOptionsSmartSimilar(opt1, opt2) && !seenOptions.has(cleanOpt1)) {
+        // Use existing similarity logic
+        if (areOptionsSimilar(opt1, opt2) && !seen.has(cleanOpt1)) {
           common.push(opt1);
-          seenStage2Indices.add(j);
-          seenOptions.add(cleanOpt1);
+          seen.add(cleanOpt1);
         }
       });
     });
   }
   
-  return common
+  return common.slice(0, 8);
 }
 
 // Helper: Check if options are similar
