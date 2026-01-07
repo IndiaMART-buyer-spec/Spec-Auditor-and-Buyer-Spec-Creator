@@ -644,7 +644,6 @@ function convertToMM(text: string): number | null {
   }
 }
 
-// Helper: Select top 2 specs for Buyer ISQs
 // Helper: Select top 2 specs for Buyer ISQs with improved option selection
 function selectBuyerISQs(
   commonSpecs: CommonSpecItem[], 
