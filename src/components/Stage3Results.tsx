@@ -645,15 +645,67 @@ function convertToMM(text: string): number | null {
 }
 
 // Helper: Select top 2 specs for Buyer ISQs
-function selectBuyerISQs(commonSpecs: CommonSpecItem[]): BuyerISQItem[] {
+// Helper: Select top 2 specs for Buyer ISQs with improved option selection
+function selectBuyerISQs(
+  commonSpecs: CommonSpecItem[], 
+  stage1AllSpecs: Array<{ spec_name: string; options: string[]; input_type: string; tier: 'Primary' | 'Secondary'; priority: number }>
+): BuyerISQItem[] {
   if (commonSpecs.length === 0) return [];
   
   // Take top 2 specs by priority
   const topSpecs = commonSpecs.slice(0, 2);
   
-  return topSpecs.map(spec => ({
-    spec_name: spec.spec_name,
-    options: [...new Set(spec.options)].slice(0, 8), // Remove duplicates, max 8
-    category: spec.category
-  }));
+  return topSpecs.map(spec => {
+    const allOptions = new Set<string>();
+    
+    // Step 1: Add common options first (priority 1 - exact matches)
+    spec.options.forEach(option => {
+      if (option && option.trim()) {
+        const cleanOption = option.trim();
+        // Check if already exists (case-insensitive)
+        const exists = Array.from(allOptions).some(existing => 
+          areOptionsSimilar(existing, cleanOption)
+        );
+        if (!exists) {
+          allOptions.add(cleanOption);
+        }
+      }
+    });
+    
+    // Step 2: If we don't have 8 options yet, add Stage 1 options
+    if (allOptions.size < 8) {
+      // Find the original Stage 1 spec for this spec_name
+      const stage1Spec = stage1AllSpecs.find(s => 
+        s.spec_name === spec.spec_name || 
+        areSpecsSimilar(s.spec_name, spec.spec_name)
+      );
+      
+      if (stage1Spec && stage1Spec.options) {
+        // Add Stage 1 options that are not already in the set
+        stage1Spec.options.forEach(option => {
+          if (option && option.trim() && allOptions.size < 8) {
+            const cleanOption = option.trim();
+            
+            // Check for duplicates (case-insensitive and semantic similarity)
+            const isDuplicate = Array.from(allOptions).some(existingOption => 
+              areOptionsSimilar(cleanOption, existingOption)
+            );
+            
+            if (!isDuplicate) {
+              allOptions.add(cleanOption);
+            }
+          }
+        });
+      }
+    }
+    
+    // Step 3: Convert Set to array and ensure max 8 options
+    const finalOptions = Array.from(allOptions).slice(0, 8);
+    
+    return {
+      spec_name: spec.spec_name,
+      options: finalOptions,
+      category: spec.category
+    };
+  });
 }
