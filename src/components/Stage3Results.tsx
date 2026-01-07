@@ -537,6 +537,12 @@ function normalizeSpecName(name: string): string {
   return filteredWords.join(' ').trim();
 }
 
+// Helper: Extract number from option (ADD THIS AT TOP LEVEL)
+function extractNumber(option: string): number | null {
+  const match = option.match(/(\d+(?:\.\d+)?)/);
+  return match ? parseFloat(match[1]) : null;
+}
+
 // Helper: Find common options between Stage 1 and Stage 2 with range handling
 function findCommonOptions(stage1Options: string[], stage2Options: string[]): string[] {
   const common: string[] = [];
