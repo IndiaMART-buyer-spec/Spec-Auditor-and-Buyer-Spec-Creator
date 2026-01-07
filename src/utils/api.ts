@@ -128,71 +128,296 @@ async function fetchWithRetry(
   throw new Error("Unreachable");
 }
 
-function extractJSONFromGemini(response) {
+function extractJSONFromGemini(response): any {
   try {
+    console.log("🛠️ SUPER LENIENT JSON Extraction: Starting...");
+    
     if (!response?.candidates?.length) {
-      console.warn("No candidates in response, returning null for fallback");
+      console.warn("❌ No candidates");
       return null;
     }
 
-    const parts =
-      response.candidates[0]?.content?.parts ||
-      response.candidates[0]?.content ||
-      [];
-
+    const parts = response.candidates[0]?.content?.parts || [];
     let rawText = "";
 
+    // Collect ALL text
     for (const part of parts) {
       if (typeof part.text === "string") {
         rawText += part.text + "\n";
       }
-
       if (part.json) {
+        console.log("✅ Direct JSON found");
         return part.json;
       }
     }
 
     if (!rawText.trim()) {
-      console.warn("No text content in response, returning null for fallback");
+      console.warn("⚠️ No text");
       return null;
     }
 
-    let cleaned = rawText
-      .replace(/```json/gi, "")
-      .replace(/```/g, "")
-      .trim();
-
-    // Try to match array first (for audit results)
-    let arrayMatch = cleaned.match(/\[[\s\S]*\]/);
-    if (arrayMatch) {
-      try {
-        const parsed = JSON.parse(arrayMatch[0].replace(/,(\s*[\]}])/g, "$1"));
-        if (Array.isArray(parsed)) {
-          return parsed;
-        }
-      } catch (e) {
-        console.warn("Array parse failed, trying object match:", e);
-      }
+    console.log(`📊 Gemini raw response length: ${rawText.length} chars`);
+    console.log("🔍 First 600 chars:");
+    console.log(rawText.substring(0, 600));
+    
+    // CRITICAL: Super aggressive extraction
+    const extracted = extractAnyJSONPossible(rawText);
+    
+    if (extracted) {
+      console.log("🎉 Extracted SOMETHING from Gemini!");
+      console.log("📦 Extracted data:", extracted);
+      return extracted;
     }
+    
+    console.warn("⚠️ Could not extract anything");
+    return null;
 
-    // Then try object match
-    const objMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (objMatch) {
-      cleaned = objMatch[0];
-    }
-
-    cleaned = cleaned.replace(/,(\s*[\]}])/g, "$1");
-
-    try {
-      return JSON.parse(cleaned);
-    } catch (parseErr) {
-      console.warn("JSON parse failed, returning null for fallback:", parseErr);
-      return null;
-    }
   } catch (error) {
-    console.warn("Unexpected error in extractJSONFromGemini:", error);
+    console.error("💥 JSON extraction error:", error);
     return null;
   }
+}
+
+// SUPER AGGRESSIVE JSON EXTRACTOR - Kuch bhi accept karega!
+function extractAnyJSONPossible(text: string): any {
+  console.log("🔥 SUPER AGGRESSIVE: Extracting ANY JSON-like structure...");
+  
+  // Clean the text first
+  let cleaned = text.trim();
+  
+  // Remove markdown code blocks
+  cleaned = cleaned.replace(/```json\s*/gi, '');
+  cleaned = cleaned.replace(/```\s*/gi, '');
+  cleaned = cleaned.replace(/`/g, '');
+  
+  // Try multiple extraction methods
+  
+  // Method 1: Try to find and fix main JSON object
+  const jsonMatch = cleaned.match(/\{(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\}))*\}))*\}/gs);
+  if (jsonMatch) {
+    console.log(`🔍 Found ${jsonMatch.length} JSON-like objects`);
+    for (const match of jsonMatch) {
+      try {
+        const fixed = fixAbsolutelyAnything(match);
+        const parsed = JSON.parse(fixed);
+        console.log("✅ Parsed JSON object");
+        return parsed;
+      } catch (e) {
+        console.log("🔄 Object parse failed, trying next...");
+      }
+    }
+  }
+  
+  // Method 2: Try to find JSON array
+  const arrayMatch = cleaned.match(/\[[\s\S]*?\]/);
+  if (arrayMatch) {
+    console.log("🔍 Found array structure");
+    try {
+      const fixed = fixAbsolutelyAnything(arrayMatch[0]);
+      // Wrap array in object if needed
+      const wrapped = `{"data": ${fixed}}`;
+      const parsed = JSON.parse(wrapped);
+      console.log("✅ Parsed array (wrapped in object)");
+      return parsed;
+    } catch (e) {
+      console.log("🔄 Array parse failed");
+    }
+  }
+  
+  // Method 3: Extract using string patterns (ULTIMATE FALLBACK)
+  console.log("🔄 Using ULTIMATE pattern matching...");
+  
+  // Try to extract config
+  const configMatch = cleaned.match(/config[\s\n]*:[\s\n]*\{[\s\S]*?\}/i);
+  const keysMatch = cleaned.match(/keys[\s\n]*:[\s\n]*\[[\s\S]*?\]/i);
+  
+  if (configMatch || keysMatch) {
+    console.log("🔍 Found config/keys patterns");
+    const result: any = {};
+    
+    if (configMatch) {
+      try {
+        const configText = configMatch[0].replace(/config[\s\n]*:[\s\n]*/i, '{').trim();
+        const fixed = fixAbsolutelyAnything(`{${configText}}`.replace('{{', '{').replace('}}', '}'));
+        const parsed = JSON.parse(fixed);
+        result.config = parsed.config || parsed;
+      } catch (e) {
+        // Extract manually
+        const nameMatch = configMatch[0].match(/name[\s\n]*:[\s\n]*["']?([^"'\n}]+)["']?/i);
+        const optionsMatch = configMatch[0].match(/options[\s\n]*:[\s\n]*\[([\s\S]*?)\]/i);
+        
+        if (nameMatch || optionsMatch) {
+          result.config = {
+            name: nameMatch ? nameMatch[1].trim() : "Unknown",
+            options: optionsMatch ? extractOptionsFromText(optionsMatch[1]) : []
+          };
+        }
+      }
+    }
+    
+    if (keysMatch) {
+      try {
+        const keysText = keysMatch[0].replace(/keys[\s\n]*:[\s\n]*/i, '[').trim();
+        const fixed = fixAbsolutelyAnything(`[${keysText}]`.replace('[[', '[').replace(']]', ']'));
+        const parsed = JSON.parse(fixed);
+        result.keys = Array.isArray(parsed) ? parsed : parsed.keys || [];
+      } catch (e) {
+        // Extract manually
+        result.keys = extractKeysFromText(keysMatch[0]);
+      }
+    }
+    
+    if (result.config || result.keys) {
+      console.log("✅ Extracted via pattern matching");
+      return result;
+    }
+  }
+  
+  // Method 4: Last resort - parse as text
+  return parseAsText(cleaned);
+}
+
+// FIX ANYTHING - ULTIMATE FIXER
+function fixAbsolutelyAnything(text: string): string {
+  console.log("⚡ Applying ULTIMATE fix...");
+  
+  let fixed = text;
+  
+  // 1. Fix ALL missing commas in arrays
+  fixed = fixed.replace(/"\s*"/g, '","');          // "a" "b" -> "a","b"
+  fixed = fixed.replace(/"\s*\n\s*"/g, '","');    // "a"\n"b" -> "a","b"
+  fixed = fixed.replace(/"\s*\r\s*"/g, '","');    // "a"\r"b" -> "a","b"
+  
+  // 2. Fix keys without quotes
+  fixed = fixed.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
+  
+  // 3. Fix single quotes
+  fixed = fixed.replace(/'/g, '"');
+  
+  // 4. Fix trailing commas
+  fixed = fixed.replace(/,\s*([\]}])/g, '$1');
+  
+  // 5. Fix missing commas before }
+  fixed = fixed.replace(/("\s*}\s*")/g, '"},');
+  
+  // 6. Remove any garbage characters
+  fixed = fixed.replace(/[^\x20-\x7E\r\n]/g, ' ');
+  
+  // 7. Fix newlines in strings
+  fixed = fixed.replace(/"[^"]*"/g, match => match.replace(/\n/g, ' ').replace(/\r/g, ' '));
+  
+  // 8. Ensure proper structure
+  if (!fixed.startsWith('{') && !fixed.startsWith('[')) {
+    // Try to find start
+    const firstBrace = fixed.indexOf('{');
+    const firstBracket = fixed.indexOf('[');
+    
+    if (firstBrace !== -1) {
+      fixed = fixed.substring(firstBrace);
+    } else if (firstBracket !== -1) {
+      fixed = fixed.substring(firstBracket);
+    }
+  }
+  
+  // 9. Balance brackets
+  let openBraces = (fixed.match(/{/g) || []).length;
+  let closeBraces = (fixed.match(/}/g) || []).length;
+  
+  if (openBraces > closeBraces) {
+    fixed += '}'.repeat(openBraces - closeBraces);
+  }
+  
+  console.log(`📝 Fixed text (first 400 chars): ${fixed.substring(0, 400)}`);
+  return fixed;
+}
+
+// Extract options from broken text
+function extractOptionsFromText(text: string): string[] {
+  const options: string[] = [];
+  
+  // Match anything that looks like an option
+  const optionMatches = text.match(/["']([^"',\n\r\]]+)["']/g) || [];
+  
+  optionMatches.forEach(match => {
+    const option = match.replace(/["']/g, '').trim();
+    if (option && option.length > 0 && !option.includes('options') && !option.includes('name')) {
+      options.push(option);
+    }
+  });
+  
+  // Also look for unquoted options
+  const unquotedMatches = text.split(/[,\[\]]/);
+  unquotedMatches.forEach(part => {
+    const trimmed = part.trim();
+    if (trimmed && trimmed.length > 0 && 
+        !trimmed.includes('options') && 
+        !trimmed.includes('name') &&
+        !trimmed.includes('config') &&
+        !trimmed.includes('keys') &&
+        trimmed.length < 50) {
+      options.push(trimmed);
+    }
+  });
+  
+  return [...new Set(options)].slice(0, 10); // Remove duplicates, limit to 10
+}
+
+// Extract keys from broken text
+function extractKeysFromText(text: string): any[] {
+  const keys: any[] = [];
+  
+  // Split by potential key objects
+  const keySections = text.split(/\{/).slice(1); // Skip first empty
+  
+  keySections.forEach(section => {
+    const nameMatch = section.match(/name[\s\n]*:[\s\n]*["']?([^"'\n}]+)["']?/i);
+    const optionsMatch = section.match(/options[\s\n]*:[\s\n]*\[([\s\S]*?)\]/i);
+    
+    if (nameMatch || optionsMatch) {
+      keys.push({
+        name: nameMatch ? nameMatch[1].trim() : "Unknown",
+        options: optionsMatch ? extractOptionsFromText(optionsMatch[1]) : []
+      });
+    }
+  });
+  
+  return keys.slice(0, 3); // Max 3 keys
+}
+
+// Last resort: Parse as text
+function parseAsText(text: string): any {
+  console.log("📝 Parsing as plain text...");
+  
+  // Look for any specifications mentioned
+  const specPatterns = [
+    /(?:config|main)[\s\n]*specification[\s\n]*:?[\s\n]*["']?([^"'\n.]+)/i,
+    /(?:grade|material|thickness|size|type)[\s\n]*:?[\s\n]*["']?([^"'\n.]+)/i
+  ];
+  
+  const result: any = {
+    config: { name: "Unknown", options: [] },
+    keys: []
+  };
+  
+  // Try to find config
+  for (const pattern of specPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      result.config.name = match[1].trim();
+      break;
+    }
+  }
+  
+  // Try to find options
+  const optionMatches = text.match(/["']([^"'\n\r]+)["']/g) || [];
+  const options = optionMatches
+    .map(m => m.replace(/["']/g, '').trim())
+    .filter(opt => opt.length > 0 && opt.length < 30)
+    .slice(0, 5);
+  
+  result.config.options = options;
+  
+  return result;
 }
 
 const STAGE1_API_KEY = (import.meta.env.VITE_STAGE1_API_KEY || "").trim();
