@@ -659,17 +659,17 @@ function selectBuyerISQs(
     
     // Step 1: Add common options first (priority 1 - exact matches)
     spec.options.forEach(option => {
-      if (option && option.trim()) {
-        const cleanOption = option.trim();
-        // Check if already exists (case-insensitive)
-        const exists = Array.from(allOptions).some(existing => 
-          areOptionsSimilar(existing, cleanOption)
-        );
-        if (!exists) {
-          allOptions.add(cleanOption);
-        }
-      }
-    });
+  if (option && option.trim() && option.toLowerCase() !== "other") { // ← YEH LINE
+    const cleanOption = option.trim();
+    // Check if already exists
+    const exists = Array.from(allOptions).some(existing => 
+      areOptionsSimilar(existing, cleanOption)
+    );
+    if (!exists) {
+      allOptions.add(cleanOption);
+    }
+  }
+});
     
     // Step 2: If we don't have 8 options yet, add Stage 1 options
     if (allOptions.size < 8) {
