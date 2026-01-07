@@ -764,81 +764,21 @@ function areOptionsSmartSimilar(opt1: string, opt2: string): boolean {
   return false;
 }
 
-// Helper: Check if options are similar (FIXED version with decimal handling)
+// Helper: Check if options are similar (updated for decimals)
 function areOptionsSimilar(opt1: string, opt2: string): boolean {
   if (!opt1 || !opt2) return false;
   
   const clean1 = opt1.trim().toLowerCase();
   const clean2 = opt2.trim().toLowerCase();
   
-  // 1. Exact match
+  // Exact match
   if (clean1 === clean2) return true;
   
-  // 2. Remove spaces
+  // Remove spaces
   if (clean1.replace(/\s+/g, '') === clean2.replace(/\s+/g, '')) return true;
   
-  // 3. Handle SS 430 vs 430
-  const normalizeSS = (text: string) => {
-    // Remove "ss", "stainless", "steel" prefixes
-    return text.replace(/\b(?:ss|stainless|steel)\s*/gi, '').trim();
-  };
-  
-  const norm1 = normalizeSS(clean1);
-  const norm2 = normalizeSS(clean2);
-  
-  if (norm1 === norm2) return true;
-  
-  // 4. Handle decimals: 1.0mm vs 1mm (same), but 1.0mm vs 10mm (different)
-  const extractNumber = (text: string): number | null => {
-    const match = text.match(/(\d+(?:\.\d+)?)/);
-    return match ? parseFloat(match[1]) : null;
-  };
-  
-  const num1 = extractNumber(clean1);
-  const num2 = extractNumber(clean2);
-  
-  if (num1 !== null && num2 !== null) {
-    // Normalize decimals: 1.0 becomes 1
-    const normalizeDecimal = (num: number) => {
-      return num % 1 === 0 ? Math.floor(num) : num;
-    };
-    
-    const normNum1 = normalizeDecimal(num1);
-    const normNum2 = normalizeDecimal(num2);
-    
-    // If numbers are different (10 vs 1), don't match
-    if (Math.abs(normNum1 - normNum2) > 0.01) {
-      return false;
-    }
-    
-    // Check if units are present and comparable
-    const hasUnit1 = /mm|cm|m|inch|in|ft|"/i.test(clean1);
-    const hasUnit2 = /mm|cm|m|inch|in|ft|"/i.test(clean2);
-    
-    if (hasUnit1 && hasUnit2) {
-      // Both have units, check if same measurement
-      const mm1 = convertToMM(clean1);
-      const mm2 = convertToMM(clean2);
-      if (mm1 && mm2 && Math.abs(mm1 - mm2) < 0.1) return true;
-    } else if (!hasUnit1 && !hasUnit2) {
-      // Both don't have units, just compare numbers
-      return Math.abs(normNum1 - normNum2) < 0.01;
-    }
-  }
-  
-  // 5. Same numeric value (e.g., "304" in both)
-  const numMatch1 = clean1.match(/\b(\d+)\b/)?.[1];
-  const numMatch2 = clean2.match(/\b(\d+)\b/)?.[1];
-  if (numMatch1 && numMatch2 && numMatch1 === numMatch2) {
-    // Check if it's SS grade
-    const hasSS1 = clean1.includes('ss') || clean1.includes('stainless');
-    const hasSS2 = clean2.includes('ss') || clean2.includes('stainless');
-    if ((hasSS1 && hasSS2) || (!hasSS1 && !hasSS2)) {
-      return true;
-    }
-  }
-  
-  return false;
+  // Use the new smart similarity function
+  return areOptionsSmartSimilar(opt1, opt2);
 }
 // Helper: Convert to millimeters
 function convertToMM(text: string): number | null {
