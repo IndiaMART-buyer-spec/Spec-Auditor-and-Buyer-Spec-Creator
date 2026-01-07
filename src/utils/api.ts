@@ -674,45 +674,113 @@ function buildISQExtractionPrompt(
     .map((url, i) => `URL ${i + 1}: ${url}\nContent: ${contents[i].substring(0, 1000)}...`)
     .join("\n\n");
 
-  return `Extract ISQs from these URLs for: ${input.mcats.map((m) => m.mcat_name).join(", ")}
+  return `You are an AI that extracts product specifications from multiple URLs. 
+Your task is to identify the most important specifications and their options accurately. 
 
+Extract specifications from these URLs for: ${input.mcats.map((m) => m.mcat_name).join(", ")}
+
+URLs:
 ${urlsText}
 
-Extract:
-1. CONFIG ISQ (exactly 1): Must influence price, options must match URLs exactly
-2. KEY ISQs (exactly 3): Most repeated + category defining
+INSTRUCTIONS (Step by Step):
 
-STRICT RULES:
-- DO NOT invent specs
-- Extract ONLY specs that appear in AT LEAST 2 URLs
-- If a spec appears in only 1 URL → IGNORE it
-- If options differ, keep ONLY options that appear in AT LEAST 2 URLs
-- Do NOT guess missing options
-- EXCLUSION: If spec is in MCAT Name (e.g., "Material"), exclude it.
-- WITHOUT OPTIONS = INVALID SPEC (do not include it)
+1. **Extract all visible specifications from all URLs**, including:
+   - Technical tables
+   - Description sections
+   - Variant details
+   - Size charts
+   - Grade sheets
+   - Material information
+   - Any repeated fields
+   - Content inside tabs or expandable sections
 
-FALLBACK RULE (VERY IMPORTANT):
-- If there is NO common specification shared across at least 2 URLs
-- OR the content across URLs has no meaningful similarity
-- THEN:
-  - Identify the most relevant and meaningful specifications from ALL URLs combined
-  - Merge information from all URLs logically
-  - Still extract AT LEAST 1 specification (CONFIG or KEY)
-  - Do NOT return empty output under any condition
-  - Even in fallback, DO NOT invent specs — only use what is explicitly present
-  -  WITHOUT OPTIONS = INVALID SPEC (do not include it)
+2. **Combine equivalent specifications and options**:
+   - Merge equivalent specifications, e.g., `"Material Grade"`, `"Grade"`, `"SS 304"`, `"304"` → `"Grade"`  
+   - Merge options that mean the same, e.g., `"304L"` and `"SS 304L"` → `"SS 304L"`  
+   - Count the frequency of each specification and option after combining
 
-REQUIREMENTS:
-- Return ONLY valid JSON.
-- Absolutely no text, notes, or markdown outside JSON.
-- Output MUST start with { and end with }.
-- JSON must be valid and parseable
+3. **Select Config and Key specifications based on frequency**:
+   - **Config specification**: the specification with the highest frequency. Most important specification affecting price across similar products. Example: RAM Capacity of smartphones.
+   - **Key specifications**: the next top 3 specifications with highest frequency define the product and differentiate it from similar products. Example: Front-loading vs Top-loading for washing machines.
+   - Options must be the ones most repeated across all URLs.
+   - Do NOT repeat specifications or options in output.
+   - Do NOT include placeholder options like "Other" or "etc."
+   - If very few repetitions, still include at least 1 Config or Key specification.
 
-RESPOND WITH PURE JSON ONLY - Nothing else. No markdown, no explanation, just raw JSON that looks exactly like this:
+**Example:**  
+Suppose 3 URLs have the following data:  
+**Specification: “Grade”**
+
+- URL1 options: ["SS 304", "SS 316"]  
+- URL2 options: ["304", "SS 316"]  
+- URL3 options: ["SS 304", "SS 316L"]  
+
+**Step 1: Merge equivalent options**  
+- "SS 304" and "304" → "SS 304"  
+- Keep "SS 316" and "SS 316L" as-is  
+
+**Step 2: Count frequency**  
+Options frequency:  
+- "SS 304" → 2  
+- "SS 316" → 2  
+- "SS 316L" → 1  
+
+**Step 3: Choose top options**  
+- Pick "SS 304" and "SS 316" (most frequent)  
+- Exclude "SS 316L" (less frequent)  
+
+**Step 4: Choose specification frequency**  
+- “Grade” appears in all URLs → becomes Config specification
+
+4. **Handle ranges**:
+   - If a specification has ranges across URLs, find the overlapping range. Example:
+     - Thickness 0.3–6 mm, 0.1–5 mm, 0.25–5 mm → Output range: 0.3–5 mm
+   - Do NOT create options outside the URL-provided data.
+
+5. **Exclusions**:
+   - Do NOT include specifications already mentioned in the MCAT Name. Example:
+     - MCAT Name: “Mild Steel Hot Rolled Sheet”
+       - “Mild Steel” → Material → EXCLUDE
+       - “Hot Rolled” → Finish → EXCLUDE
+     - MCAT Name: “Stainless Steel 304 Pipe”
+       - “Stainless Steel” → Material → EXCLUDE
+       - “304” → Grade → EXCLUDE
+
+6. **Rules**:
+   - Do NOT invent specifications or options
+   - Use frequency as the main criteria for importance
+   - Ensure at least one Config or Key specification is returned
+   - Options must come from URLs; no guessing
+   - Do NOT repeat any specification or option
+   - Do NOT include placeholder options like "Other", "etc.", or similar
+
+7. **Output Format**:
+   - Return ONLY valid JSON
+   - No explanations, no markdown, no text outside JSON
+   - JSON must start with `{` and end with `}`
+   - Example JSON:
+
 {
-  "config": {"name": "...", "options": [...]},
-  "keys": [{"name": "...", "options": [...]}, ...]
-}`;
+"config": {
+"name": "Grade",
+"options": ["SS 304", "SS 316"]
+},
+"keys": [
+{
+"name": "Thickness",
+"options": ["0.3 mm to 5 mm"]
+},
+{
+"name": "Width",
+"options": ["100 mm", "200 mm", "300 mm"]
+},
+{
+"name": "Surface Finish",
+"options": ["Polished", "Matte"]
+}
+]
+}
+`;
 }
 
 // ============================================
