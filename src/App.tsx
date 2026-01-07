@@ -88,6 +88,50 @@ function App() {
     }
   };
 
+  const handleRerunStage2 = async () => {
+    if (urls.length === 0) {
+      setError("No URLs found to rerun. Please go back to Stage 2.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setProcessingStage("Re-extracting ISQs from URLs...");
+
+    try {
+      const inputData: InputData = {
+        pmcat_name: mcatName,
+        pmcat_id: "",
+        mcats: [{ mcat_name: mcatName, mcat_id: "" }],
+        urls: urls,
+      };
+
+      const result = await extractISQWithGemini(inputData, urls);
+
+      console.log("🎯 Regenerating buyer ISQs from common specs...");
+      setProcessingStage("Generating buyer ISQs...");
+
+      const buyerISQs = generateBuyerISQsFromSpecs(originalSpecs, {
+        config: result.config,
+        keys: result.keys
+      });
+
+      console.log("✅ Buyer ISQs regenerated:", buyerISQs);
+
+      setIsqs({
+        ...result,
+        buyers: buyerISQs
+      });
+      setActiveTab("stage2");
+    } catch (err) {
+      setError(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      console.error(err);
+    } finally {
+      setLoading(false);
+      setProcessingStage("");
+    }
+  };
+
   const handleReset = () => {
     setStage("input");
     setMcatName("");
@@ -192,13 +236,24 @@ function App() {
                     Complete audit and ISQ extraction for <strong>{mcatName}</strong>
                   </p>
                 </div>
-                <button
-                  onClick={handleReset}
-                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-gray-600 to-gray-700 text-white font-semibold rounded-lg hover:from-gray-700 hover:to-gray-800 transition"
-                >
-                  <RefreshCw size={20} />
-                  New Analysis
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleRerunStage2}
+                    disabled={loading}
+                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-blue-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw size={20} />
+                    Rerun Stage 2
+                  </button>
+                  <button
+                    onClick={handleReset}
+                    disabled={loading}
+                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-gray-600 to-gray-700 text-white font-semibold rounded-lg hover:from-gray-700 hover:to-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw size={20} />
+                    New Analysis
+                  </button>
+                </div>
               </div>
 
               <div className="border-b border-gray-200 mb-8">
@@ -271,40 +326,48 @@ function App() {
                 </div>
               )}
 
-              {activeTab === "stage3" && (
+              {activeTab === "stage3" && isqs && (
                 <div>
-                  <div className="mb-8">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Stage 3: Buyer ISQs</h2>
-                    <p className="text-gray-600">
-                      Key specifications frequently searched by buyers
-                    </p>
-                  </div>
-
-                  {isqs.buyers && isqs.buyers.length > 0 ? (
-                    <div className="space-y-4 mb-8">
-                      {isqs.buyers.map((buyer, idx) => (
-                        <div key={idx} className="bg-amber-50 border-2 border-amber-300 rounded-lg p-6">
-                          <h3 className="text-lg font-semibold text-amber-900 mb-3">
-                            {idx + 1}. {buyer.name}
-                          </h3>
-                          <div className="flex flex-wrap gap-2">
-                            {buyer.options.map((option, oIdx) => (
-                              <span
-                                key={oIdx}
-                                className="bg-amber-200 text-amber-900 px-3 py-1.5 rounded-full text-sm font-medium"
-                              >
-                                {option}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-8">
-                      <p className="text-yellow-800">No buyer ISQs found</p>
-                    </div>
-                  )}
+                  <Stage3Results
+                    stage1Data={{
+                      seller_specs: [
+                        {
+                          pmcat_name: mcatName,
+                          pmcat_id: "",
+                          mcats: [
+                            {
+                              category_name: mcatName,
+                              mcat_id: "",
+                              finalized_specs: {
+                                finalized_primary_specs: {
+                                  specs: originalSpecs.filter(s => s.tier === 'Primary' || !s.tier).map(s => ({
+                                    spec_name: s.spec_name,
+                                    options: s.options,
+                                    input_type: s.input_type || 'text' as 'radio_button' | 'multi_select',
+                                    affix_flag: 'None' as 'None' | 'Prefix' | 'Suffix',
+                                    affix_presence_flag: '0' as '0' | '1'
+                                  }))
+                                },
+                                finalized_secondary_specs: {
+                                  specs: originalSpecs.filter(s => s.tier === 'Secondary').map(s => ({
+                                    spec_name: s.spec_name,
+                                    options: s.options,
+                                    input_type: s.input_type || 'text' as 'radio_button' | 'multi_select',
+                                    affix_flag: 'None' as 'None' | 'Prefix' | 'Suffix',
+                                    affix_presence_flag: '0' as '0' | '1'
+                                  }))
+                                },
+                                finalized_tertiary_specs: {
+                                  specs: []
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }}
+                    isqs={isqs}
+                  />
 
                   <div className="pt-8 border-t border-gray-200 space-y-4">
                     <button
