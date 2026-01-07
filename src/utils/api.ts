@@ -757,7 +757,7 @@ Options frequency:
 7. **Output Format**:
    - Return ONLY valid JSON
    - No explanations, no markdown, no text outside JSON
-   - JSON must start with `{` and end with `}`
+   - JSON must start with { and end with }
    - Example JSON:
 
 {
