@@ -808,6 +808,7 @@ function convertToMM(text: string): number | null {
 }
 
 // Helper: Select top 2 specs for Buyer ISQs with improved option selection
+// Helper: Select top 2 specs for Buyer ISQs - USE COMMON OPTIONS DIRECTLY
 function selectBuyerISQs(
   commonSpecs: CommonSpecItem[], 
   stage1AllSpecs: Array<{ spec_name: string; options: string[]; input_type: string; tier: 'Primary' | 'Secondary'; priority: number }>
@@ -818,55 +819,51 @@ function selectBuyerISQs(
   const topSpecs = commonSpecs.slice(0, 2);
   
   return topSpecs.map(spec => {
-    const allOptions = new Set<string>();
+    // DIRECTLY use the options from commonSpecs (which are already common between Stage 1 and Stage 2)
+    // These are EXACTLY the same options shown in Common Specifications on left side
+    const commonOptions = spec.options;
     
-    // Step 1: Add common options first (priority 1 - exact matches)
-    spec.options.forEach(option => {
-  if (option && option.trim() && option.toLowerCase() !== "other") { 
-    const cleanOption = option.trim();
-    // Check if already exists
-    const exists = Array.from(allOptions).some(existing => 
-      areOptionsSimilar(existing, cleanOption)
-    );
-    if (!exists) {
-      allOptions.add(cleanOption);
-    }
-  }
-});
+    // If we have less than 8 common options, fill with Stage 1 options
+    const resultOptions: string[] = [...commonOptions];
+    const seenOptions = new Set<string>();
     
-    // Step 2: If we don't have 8 options yet, add Stage 1 options
-    if (allOptions.size < 8) {
-      // Find the original Stage 1 spec for this spec_name
+    // Mark all common options as seen
+    commonOptions.forEach(opt => {
+      if (opt && opt.trim()) {
+        seenOptions.add(opt.trim().toLowerCase());
+      }
+    });
+    
+    // If less than 8, add Stage 1 options
+    if (resultOptions.length < 8) {
+      // Find matching Stage 1 spec
       const stage1Spec = stage1AllSpecs.find(s => 
         s.spec_name === spec.spec_name || 
         areSpecsSimilar(s.spec_name, spec.spec_name)
       );
       
       if (stage1Spec && stage1Spec.options) {
-        // Add Stage 1 options that are not already in the set
         stage1Spec.options.forEach(option => {
-          if (option && option.trim() && allOptions.size < 8) {
+          if (option && option.trim() && resultOptions.length < 8) {
             const cleanOption = option.trim();
-
-             if (cleanOption.toLowerCase() === "other") {
-               return;
-             }
+            const cleanOptionLower = cleanOption.toLowerCase();
             
-            // Check for duplicates (case-insensitive and semantic similarity)
-            const isDuplicate = Array.from(allOptions).some(existingOption => 
-              areOptionsSimilar(cleanOption, existingOption)
-            );
+            // Skip "Other"
+            if (cleanOptionLower === "other") return;
             
-            if (!isDuplicate) {
-              allOptions.add(cleanOption);
-            }
+            // Skip if already in common options
+            if (seenOptions.has(cleanOptionLower)) return;
+            
+            // Add to results
+            resultOptions.push(cleanOption);
+            seenOptions.add(cleanOptionLower);
           }
         });
       }
     }
     
-    // Step 3: Convert Set to array and ensure max 8 options
-    const finalOptions = Array.from(allOptions).slice(0, 8);
+    // Take only first 8 options
+    const finalOptions = resultOptions.slice(0, 8);
     
     return {
       spec_name: spec.spec_name,
