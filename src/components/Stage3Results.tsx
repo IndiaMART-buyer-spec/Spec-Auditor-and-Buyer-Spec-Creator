@@ -611,27 +611,155 @@ function findCommonOptions(stage1Options: string[], stage2Options: string[]): st
 }
 
 // Helper: Check if options are similar
-function areOptionsSimilar(opt1: string, opt2: string): boolean {
+// Helper: SMART similarity check for options (handles decimals, SS grades, etc.)
+function areOptionsSmartSimilar(opt1: string, opt2: string): boolean {
   if (!opt1 || !opt2) return false;
   
   const clean1 = opt1.trim().toLowerCase();
   const clean2 = opt2.trim().toLowerCase();
   
-  // Exact match
+  // 1. Exact match (already handled)
   if (clean1 === clean2) return true;
   
-  // Remove spaces
-  if (clean1.replace(/\s+/g, '') === clean2.replace(/\s+/g, '')) return true;
+  // 2. Remove spaces and compare
+  const noSpace1 = clean1.replace(/\s+/g, '');
+  const noSpace2 = clean2.replace(/\s+/g, '');
+  if (noSpace1 === noSpace2) return true;
   
-  // Same numeric value (e.g., "304" in both)
-  const num1 = clean1.match(/\b(\d+)\b/)?.[1];
-  const num2 = clean2.match(/\b(\d+)\b/)?.[1];
-  if (num1 && num2 && num1 === num2) return true;
+  // 3. Handle SS grades and numbers like 430
+  // Extract numeric parts with suffixes
+  const extractNumberWithSuffix = (text: string) => {
+    const match = text.match(/(\d+(?:\.\d+)?)([a-z]*)/i);
+    if (match) {
+      return {
+        number: parseFloat(match[1]),
+        suffix: match[2] || '',
+        original: match[1] + match[2]
+      };
+    }
+    return null;
+  };
   
-  // Measurement similarity
-  const mm1 = convertToMM(clean1);
-  const mm2 = convertToMM(clean2);
-  if (mm1 && mm2 && Math.abs(mm1 - mm2) < 0.1) return true;
+  const num1 = extractNumberWithSuffix(clean1);
+  const num2 = extractNumberWithSuffix(clean2);
+  
+  if (num1 && num2) {
+    // Check if numbers are equal (considering decimal precision)
+    const num1Str = num1.number.toString();
+    const num2Str = num2.number.toString();
+    
+    // Normalize decimals: 1.0 becomes 1, 1.00 becomes 1
+    const normalizeDecimal = (num: number) => {
+      if (num % 1 === 0) return Math.floor(num);
+      return num;
+    };
+    
+    const normNum1 = normalizeDecimal(num1.number);
+    const normNum2 = normalizeDecimal(num2.number);
+    
+    // Check if numbers are same (1.0 == 1)
+    if (normNum1 === normNum2) {
+      // Check suffixes
+      if (num1.suffix === num2.suffix) {
+        return true; // Same number and suffix
+      }
+      
+      // For SS grades: 316 and 316L are different
+      // But "SS 430" and "430" should match
+      const isSSGrade1 = clean1.includes('ss') || clean1.includes('stainless') || num1.suffix;
+      const isSSGrade2 = clean2.includes('ss') || clean2.includes('stainless') || num2.suffix;
+      
+      // If both have no suffix or only one has "ss" prefix
+      if ((!num1.suffix && !num2.suffix) || 
+          (clean1.includes('430') && clean2.includes('430')) ||
+          (clean1.includes('304') && clean2.includes('304')) ||
+          (clean1.includes('316') && clean2.includes('316'))) {
+        // Allow match for same base number
+        return true;
+      }
+    }
+  }
+  
+  // 4. Handle measurements with decimals (1.0mm vs 1mm vs 10mm)
+  const extractMeasurement = (text: string) => {
+    const match = text.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m|inch|in|ft|")?/i);
+    if (match) {
+      const value = parseFloat(match[1]);
+      const unit = match[2]?.toLowerCase() || '';
+      
+      // Convert to mm for comparison
+      let mmValue = value;
+      switch (unit) {
+        case 'cm': mmValue = value * 10; break;
+        case 'm': mmValue = value * 1000; break;
+        case 'inch':
+        case 'in':
+        case '"': mmValue = value * 25.4; break;
+        case 'ft': mmValue = value * 304.8; break;
+      }
+      
+      return {
+        value: value,
+        mmValue: mmValue,
+        unit: unit,
+        original: match[1] + (unit || '')
+      };
+    }
+    return null;
+  };
+  
+  const meas1 = extractMeasurement(clean1);
+  const meas2 = extractMeasurement(clean2);
+  
+  if (meas1 && meas2) {
+    // Check if same measurement in mm
+    const diff = Math.abs(meas1.mmValue - meas2.mmValue);
+    if (diff < 0.01) { // 0.01mm tolerance
+      return true;
+    }
+    
+    // Check if values are same (1.0 vs 1)
+    const normValue1 = meas1.value % 1 === 0 ? Math.floor(meas1.value) : meas1.value;
+    const normValue2 = meas2.value % 1 === 0 ? Math.floor(meas2.value) : meas2.value;
+    
+    // But 1.0mm and 10mm should NOT match
+    if (Math.abs(normValue1 - normValue2) > 0.1) {
+      return false;
+    }
+    
+    // If units are different, convert and compare
+    if (meas1.unit && meas2.unit && meas1.unit !== meas2.unit) {
+      // Already compared in mmValue above
+      return diff < 0.01;
+    }
+  }
+  
+  // 5. String contains check with context awareness
+  if (clean1.includes(clean2) || clean2.includes(clean1)) {
+    // But check for problematic cases:
+    // - "SS 316" contains "316" - should match
+    // - "1.0mm" contains "1mm" - should match (1.0 == 1)
+    // - "10mm" contains "1mm" - should NOT match (10 != 1)
+    
+    const containsNumber1 = clean1.match(/\d+(?:\.\d+)?/);
+    const containsNumber2 = clean2.match(/\d+(?:\.\d+)?/);
+    
+    if (containsNumber1 && containsNumber2) {
+      const num1 = parseFloat(containsNumber1[0]);
+      const num2 = parseFloat(containsNumber2[0]);
+      
+      // Normalize decimals
+      const normNum1 = num1 % 1 === 0 ? Math.floor(num1) : num1;
+      const normNum2 = num2 % 1 === 0 ? Math.floor(num2) : num2;
+      
+      // If numbers are different (10 vs 1), don't match
+      if (Math.abs(normNum1 - normNum2) > 0.1) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
   
   return false;
 }
