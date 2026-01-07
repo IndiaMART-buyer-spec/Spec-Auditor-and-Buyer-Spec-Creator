@@ -688,6 +688,7 @@ function selectBuyerISQs(
              if (cleanOption.toLowerCase() === "other") {
                return;
              }
+            
             // Check for duplicates (case-insensitive and semantic similarity)
             const isDuplicate = Array.from(allOptions).some(existingOption => 
               areOptionsSimilar(cleanOption, existingOption)
