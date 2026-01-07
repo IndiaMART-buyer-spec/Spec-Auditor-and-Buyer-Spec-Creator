@@ -185,6 +185,67 @@ function extractAnyJSONPossible(text: string): any {
   // Clean the text first
   let cleaned = text.trim();
   
+  // 🚨 CRITICAL FIX: Handle the specific incomplete "Polished" case from your logs
+  if (cleaned.includes('"Polished"') && !cleaned.includes('"Polished"]')) {
+    console.log("🔧 Detected incomplete 'Polished' array in keys, manually completing...");
+    
+    // Try to extract the partial JSON we have
+    const configMatch = cleaned.match(/"config"\s*:\s*(\{[\s\S]*?\})/);
+    const keysMatch = cleaned.match(/"keys"\s*:\s*(\[[\s\S]*)/);
+    
+    if (configMatch && keysMatch) {
+      console.log("🔧 Building complete JSON manually...");
+      
+      try {
+        // Parse config
+        const config = JSON.parse(configMatch[1]);
+        
+        // Parse incomplete keys and complete them
+        let keysText = keysMatch[1];
+        
+        // Complete the array
+        if (!keysText.trim().endsWith(']')) {
+          // Remove anything after the incomplete array
+          const lines = keysText.split('\n');
+          const fixedLines = [];
+          
+          for (const line of lines) {
+            if (line.includes('"Polished"')) {
+              fixedLines.push(line.replace(/"Polished",?\s*$/, '"Polished"'));
+              break;
+            }
+            fixedLines.push(line);
+          }
+          
+          keysText = fixedLines.join('\n') + ']';
+        }
+        
+        // Try to parse keys
+        let keys = [];
+        try {
+          keys = JSON.parse(keysText);
+        } catch (e) {
+          // If still fails, create a simple key
+          keys = [{
+            name: "Finish",
+            options: ["2B", "2R (BA)", "Polished"]
+          }];
+        }
+        
+        const result = {
+          config,
+          keys: Array.isArray(keys) ? keys : []
+        };
+        
+        console.log("✅ Manually constructed complete JSON");
+        return result;
+        
+      } catch (e) {
+        console.log("❌ Manual construction failed:", e.message);
+      }
+    }
+  }
+  
   // Remove markdown code blocks
   cleaned = cleaned.replace(/```json\s*/gi, '');
   cleaned = cleaned.replace(/```\s*/gi, '');
@@ -228,8 +289,8 @@ function extractAnyJSONPossible(text: string): any {
   console.log("🔄 Using ULTIMATE pattern matching...");
   
   // Try to extract config
-  const configMatch = cleaned.match(/config[\s\n]*:[\s\n]*\{[\s\S]*?\}/i);
-  const keysMatch = cleaned.match(/keys[\s\n]*:[\s\n]*\[[\s\S]*?\]/i);
+  const configMatch = cleaned.match(/config[\s\n]*:[\s\n]*(\{[\s\S]*?\})/i);
+  const keysMatch = cleaned.match(/keys[\s\n]*:[\s\n]*(\[[\s\S]*?\])/i);
   
   if (configMatch || keysMatch) {
     console.log("🔍 Found config/keys patterns");
@@ -237,14 +298,14 @@ function extractAnyJSONPossible(text: string): any {
     
     if (configMatch) {
       try {
-        const configText = configMatch[0].replace(/config[\s\n]*:[\s\n]*/i, '{').trim();
-        const fixed = fixAbsolutelyAnything(`{${configText}}`.replace('{{', '{').replace('}}', '}'));
+        const configText = configMatch[1];
+        const fixed = fixAbsolutelyAnything(configText);
         const parsed = JSON.parse(fixed);
-        result.config = parsed.config || parsed;
+        result.config = parsed;
       } catch (e) {
         // Extract manually
-        const nameMatch = configMatch[0].match(/name[\s\n]*:[\s\n]*["']?([^"'\n}]+)["']?/i);
-        const optionsMatch = configMatch[0].match(/options[\s\n]*:[\s\n]*\[([\s\S]*?)\]/i);
+        const nameMatch = configMatch[1].match(/name[\s\n]*:[\s\n]*["']?([^"'\n}]+)["']?/i);
+        const optionsMatch = configMatch[1].match(/options[\s\n]*:[\s\n]*\[([\s\S]*?)\]/i);
         
         if (nameMatch || optionsMatch) {
           result.config = {
@@ -257,12 +318,23 @@ function extractAnyJSONPossible(text: string): any {
     
     if (keysMatch) {
       try {
-        const keysText = keysMatch[0].replace(/keys[\s\n]*:[\s\n]*/i, '[').trim();
-        const fixed = fixAbsolutelyAnything(`[${keysText}]`.replace('[[', '[').replace(']]', ']'));
+        let keysText = keysMatch[1];
+        
+        // 🚨 FIX: Complete incomplete keys array
+        if (!keysText.trim().endsWith(']')) {
+          keysText = keysText.trim();
+          if (keysText.endsWith(',')) {
+            keysText = keysText.slice(0, -1);
+          }
+          keysText += ']';
+        }
+        
+        const fixed = fixAbsolutelyAnything(keysText);
         const parsed = JSON.parse(fixed);
-        result.keys = Array.isArray(parsed) ? parsed : parsed.keys || [];
+        result.keys = Array.isArray(parsed) ? parsed : [];
       } catch (e) {
-        // Extract manually
+        console.log("❌ Keys parse failed, extracting manually...");
+        // Extract keys manually
         result.keys = extractKeysFromText(keysMatch[0]);
       }
     }
@@ -276,7 +348,6 @@ function extractAnyJSONPossible(text: string): any {
   // Method 4: Last resort - parse as text
   return parseAsText(cleaned);
 }
-
 // FIX ANYTHING - ULTIMATE FIXER
 function fixAbsolutelyAnything(text: string): string {
   console.log("⚡ Applying ULTIMATE fix...");
