@@ -244,28 +244,24 @@ function SpecCard({
 }
 
 // ============================================
-// MAIN FUNCTION - PURANA LOGIC WAPAS
+// MAIN FUNCTION
 // ============================================
 
 function extractCommonAndBuyerSpecs(
   stage1: Stage1Output,
   isqs: { config: ISQ; keys: ISQ[]; buyers: ISQ[] }
 ): { commonSpecs: CommonSpecItem[]; buyerISQs: BuyerISQItem[] } {
-  console.log('🚀 Stage3: Starting extraction with old logic...');
+  console.log('🚀 Stage3: Starting extraction...');
   
-  // STEP 1: Get ALL Stage 1 specs (from seller_specs ONLY)
   const stage1AllSpecs = extractAllStage1Specs(stage1);
-  console.log('📊 Stage 1 specs:', stage1AllSpecs.length, stage1AllSpecs);
+  console.log('📊 Stage 1 specs:', stage1AllSpecs.length);
   
-  // STEP 2: Get ALL Stage 2 ISQs
   const stage2AllISQs = extractAllStage2ISQs(isqs);
-  console.log('📊 Stage 2 ISQs:', stage2AllISQs.length, stage2AllISQs);
+  console.log('📊 Stage 2 ISQs:', stage2AllISQs.length);
   
-  // STEP 3: Find common specs using SEMANTIC MATCHING
   const commonSpecs = findCommonSpecs(stage1AllSpecs, stage2AllISQs);
   console.log('🎯 Found common specs:', commonSpecs.length);
   
-  // STEP 4: Select Buyer ISQs (top 2 by priority) - PASS stage1AllSpecs
   const buyerISQs = selectBuyerISQs(commonSpecs, stage1AllSpecs);
   console.log('🛒 Buyer ISQs:', buyerISQs.length);
   
@@ -298,7 +294,6 @@ function extractAllStage1Specs(stage1: Stage1Output): Array<{
   
   stage1.seller_specs.forEach(sellerSpec => {
     sellerSpec.mcats.forEach(mcat => {
-      // Primary specs
       mcat.finalized_specs.finalized_primary_specs.specs.forEach(spec => {
         if (spec.spec_name && spec.options) {
           specs.push({
@@ -311,7 +306,6 @@ function extractAllStage1Specs(stage1: Stage1Output): Array<{
         }
       });
       
-      // Secondary specs
       mcat.finalized_specs.finalized_secondary_specs.specs.forEach(spec => {
         if (spec.spec_name && spec.options) {
           specs.push({
@@ -324,7 +318,6 @@ function extractAllStage1Specs(stage1: Stage1Output): Array<{
         }
       });
       
-      // Tertiary specs (if exists, treat as Secondary)
       if (mcat.finalized_specs.finalized_tertiary_specs?.specs) {
         mcat.finalized_specs.finalized_tertiary_specs.specs.forEach(spec => {
           if (spec.spec_name && spec.options) {
@@ -356,7 +349,6 @@ function extractAllStage2ISQs(isqs: { config: ISQ; keys: ISQ[]; buyers: ISQ[] })
     priority: number;
   }> = [];
   
-  // Config ISQ - highest priority
   if (isqs.config && isqs.config.name && isqs.config.options?.length > 0) {
     isqList.push({
       name: isqs.config.name,
@@ -365,7 +357,6 @@ function extractAllStage2ISQs(isqs: { config: ISQ; keys: ISQ[]; buyers: ISQ[] })
     });
   }
   
-  // Key ISQs - medium priority
   if (isqs.keys && isqs.keys.length > 0) {
     isqs.keys.forEach(key => {
       if (key.name && key.options?.length > 0) {
@@ -378,7 +369,6 @@ function extractAllStage2ISQs(isqs: { config: ISQ; keys: ISQ[]; buyers: ISQ[] })
     });
   }
   
-  // Buyer ISQs - lowest priority
   if (isqs.buyers && isqs.buyers.length > 0) {
     isqs.buyers.forEach(buyer => {
       if (buyer.name && buyer.options?.length > 0) {
@@ -402,17 +392,14 @@ function findCommonSpecs(
   const commonSpecs: CommonSpecItem[] = [];
   const matchedStage2Indices = new Set<number>();
   
-  // For each Stage 1 spec
   stage1Specs.forEach(stage1Spec => {
     let bestMatchIndex = -1;
     let bestMatchPriority = 0;
     let bestMatchOptions: string[] = [];
     
-    // Find best matching Stage 2 ISQ
     stage2ISQs.forEach((stage2ISQ, index) => {
       if (matchedStage2Indices.has(index)) return;
       
-      // Check if specs are similar
       if (areSpecsSimilar(stage1Spec.spec_name, stage2ISQ.name)) {
         const combinedPriority = stage1Spec.priority + stage2ISQ.priority;
         
@@ -424,11 +411,9 @@ function findCommonSpecs(
       }
     });
     
-    // If found a match
     if (bestMatchIndex !== -1) {
       matchedStage2Indices.add(bestMatchIndex);
       
-      // Find common options
       const commonOptions = findCommonOptions(stage1Spec.options, bestMatchOptions);
       
       commonSpecs.push({
@@ -441,12 +426,10 @@ function findCommonSpecs(
     }
   });
   
-  // Remove duplicates (same spec name)
   const uniqueSpecs = commonSpecs.filter((spec, index, self) => 
     index === self.findIndex(s => s.spec_name === spec.spec_name)
   );
   
-  // Sort by priority (highest first)
   uniqueSpecs.sort((a, b) => b.priority - a.priority);
   
   return uniqueSpecs;
@@ -459,13 +442,10 @@ function areSpecsSimilar(spec1: string, spec2: string): boolean {
   const norm1 = normalizeSpecName(spec1);
   const norm2 = normalizeSpecName(spec2);
   
-  // Exact match
   if (norm1 === norm2) return true;
   
-  // One contains the other
   if (norm1.includes(norm2) || norm2.includes(norm1)) return true;
   
-  // Synonym groups (same as your api.ts)
   const synonymGroups = [
     ['material', 'composition', 'fabric'],
     ['grade', 'quality', 'class', 'standard'],
@@ -494,7 +474,7 @@ function areSpecsSimilar(spec1: string, spec2: string): boolean {
   return false;
 }
 
-// Helper: Normalize spec name (same as your api.ts)
+// Helper: Normalize spec name
 function normalizeSpecName(name: string): string {
   if (!name) return '';
   
@@ -557,8 +537,6 @@ function normalizeSpecName(name: string): string {
   return filteredWords.join(' ').trim();
 }
 
-
-// Helper: Find common options between Stage 1 and Stage 2 with improved matching
 // Helper: Find common options between Stage 1 and Stage 2 with range handling
 function findCommonOptions(stage1Options: string[], stage2Options: string[]): string[] {
   const common: string[] = [];
@@ -572,162 +550,93 @@ function findCommonOptions(stage1Options: string[], stage2Options: string[]): st
   // Helper: Parse range and get all numbers with 0.1 step
   const parseRange = (range: string): number[] => {
     const numbers: number[] = [];
-    
-    // Match patterns: "0.1mm to 6mm", "0.1-6mm", "0.1 mm - 6 mm"
     const match = range.match(/(\d+(?:\.\d+)?)\s*(?:to|-|–)\s*(\d+(?:\.\d+)?)/i);
-    if (!match) return numbers;
     
-    const start = parseFloat(match[1]);
-    const end = parseFloat(match[2]);
-    
-    // Generate numbers with 0.1 step
-    const step = 0.1;
-    let current = Math.ceil(start * 10) / 10; // Round up to nearest 0.1
-    
-    while (current <= end) {
-      // Keep one decimal precision
-      numbers.push(Math.round(current * 10) / 10);
-      current += step;
+    if (match) {
+      const start = parseFloat(match[1]);
+      const end = parseFloat(match[2]);
+      const step = 0.1;
+      let current = Math.ceil(start * 10) / 10;
+      
+      while (current <= end) {
+        numbers.push(Math.round(current * 10) / 10);
+        current += step;
+      }
     }
     
     return numbers;
   };
   
-  // Helper: Get unit from option
-  const getUnit = (option: string): string => {
-    const match = option.match(/(mm|cm|m|inch|in|ft|")/i);
-    return match ? match[1].toLowerCase() : 'mm';
+  // Helper: Extract SS grade from option (e.g., "304" from "SS 304L")
+  const extractSSGrade = (option: string): { number: string; suffix: string } | null => {
+    const clean = option.toLowerCase();
+    // Match patterns: 304, 304L, 316, 316L
+    const match = clean.match(/(\d{3})([a-z])?/);
+    if (match) {
+      return {
+        number: match[1],
+        suffix: match[2] || ''
+      };
+    }
+    return null;
   };
   
-  // Helper: Extract number from option
-  const extractNumber = (option: string): number | null => {
-    const match = option.match(/(\d+(?:\.\d+)?)/);
-    return match ? parseFloat(match[1]) : null;
-  };
-  
-  // Helper: Normalize unit comparison
-  const normalizeUnit = (unit1: string, unit2: string): boolean => {
-    if (unit1 === unit2) return true;
-    // Treat missing unit as 'mm'
-    if ((unit1 === 'mm' && unit2 === '') || (unit1 === '' && unit2 === 'mm')) return true;
+  // Helper: Check if two options are similar (considering SS grades)
+  const areOptionsSimilarForCommon = (opt1: string, opt2: string): boolean => {
+    const clean1 = opt1.toLowerCase();
+    const clean2 = opt2.toLowerCase();
+    
+    // Exact match
+    if (clean1 === clean2) return true;
+    
+    // Remove spaces
+    if (clean1.replace(/\s+/g, '') === clean2.replace(/\s+/g, '')) return true;
+    
+    // Check SS grades
+    const grade1 = extractSSGrade(clean1);
+    const grade2 = extractSSGrade(clean2);
+    
+    if (grade1 && grade2) {
+      // SS 304 vs 304 should match (same number, ignore prefix)
+      if (grade1.number === grade2.number) {
+        // But 304 vs 304L should NOT match (different suffix)
+        if (grade1.suffix !== grade2.suffix) {
+          return false;
+        }
+        return true;
+      }
+      return false;
+    }
+    
     return false;
   };
   
   // First pass: Exact matches
   stage1Options.forEach(opt1 => {
-    const cleanOpt1 = opt1.trim().toLowerCase();
+    const cleanOpt1 = opt1.toLowerCase();
     
-    // Check for exact match
     const exactMatch = stage2Options.find(opt2 => 
-      opt2.trim().toLowerCase() === cleanOpt1
+      opt2.toLowerCase() === cleanOpt1
     );
     
     if (exactMatch && !seen.has(cleanOpt1)) {
-      common.push(opt1); // Keep original formatting
+      common.push(opt1);
       seen.add(cleanOpt1);
     }
   });
   
-  // Second pass: Range vs Discrete matching
-  // Check discrete options from Stage 2 that are in Stage 1 ranges
-  stage2Options.forEach(opt2 => {
-    if (common.length >= 8) return;
-    
-    const cleanOpt2 = opt2.trim().toLowerCase();
-    if (seen.has(cleanOpt2)) return;
-    
-    const isOpt2Range = isRange(opt2);
-    
-    // If opt2 is discrete, check if it's in any Stage 1 range
-    if (!isOpt2Range) {
-      const num2 = extractNumber(opt2);
-      const unit2 = getUnit(opt2);
-      
-      if (num2 !== null) {
-        stage1Options.forEach(opt1 => {
-          if (common.length >= 8) return;
-          
-          const isOpt1Range = isRange(opt1);
-          
-          if (isOpt1Range) {
-            const rangeNumbers = parseRange(opt1);
-            const unit1 = getUnit(opt1);
-            
-            // Check if units match and number is in range
-            if (normalizeUnit(unit1, unit2)) {
-              const isInRange = rangeNumbers.some(rangeNum => 
-                Math.abs(rangeNum - num2) < 0.01
-              );
-              
-              if (isInRange && !seen.has(cleanOpt2)) {
-                common.push(opt2); // Add the discrete option from Stage 2
-                seen.add(cleanOpt2);
-              }
-            }
-          }
-        });
-      }
-    }
-  });
-  
-  // Third pass: Check discrete options from Stage 1 that are in Stage 2 ranges
+  // Second pass: Similar matches (including SS 304 vs 304)
   if (common.length < 8) {
     stage1Options.forEach(opt1 => {
       if (common.length >= 8) return;
       
-      const cleanOpt1 = opt1.trim().toLowerCase();
+      const cleanOpt1 = opt1.toLowerCase();
       if (seen.has(cleanOpt1)) return;
-      
-      const isOpt1Range = isRange(opt1);
-      
-      // If opt1 is discrete, check if it's in any Stage 2 range
-      if (!isOpt1Range) {
-        const num1 = extractNumber(opt1);
-        const unit1 = getUnit(opt1);
-        
-        if (num1 !== null) {
-          stage2Options.forEach(opt2 => {
-            if (common.length >= 8) return;
-            
-            const isOpt2Range = isRange(opt2);
-            
-            if (isOpt2Range) {
-              const rangeNumbers = parseRange(opt2);
-              const unit2 = getUnit(opt2);
-              
-              // Check if units match and number is in range
-              if (normalizeUnit(unit1, unit2)) {
-                const isInRange = rangeNumbers.some(rangeNum => 
-                  Math.abs(rangeNum - num1) < 0.01
-                );
-                
-                if (isInRange && !seen.has(cleanOpt1)) {
-                  common.push(opt1); // Add the discrete option from Stage 1
-                  seen.add(cleanOpt1);
-                }
-              }
-            }
-          });
-        }
-      }
-    });
-  }
-  
-  // Fourth pass: Discrete vs Discrete similarity (for non-range cases)
-  if (common.length < 8) {
-    stage1Options.forEach(opt1 => {
-      if (common.length >= 8) return;
-      
-      const cleanOpt1 = opt1.trim().toLowerCase();
-      if (seen.has(cleanOpt1)) return;
-      if (isRange(opt1)) return; // Skip ranges
       
       stage2Options.forEach(opt2 => {
         if (common.length >= 8) return;
-        if (isRange(opt2)) return; // Skip ranges
         
-        // Use existing similarity logic
-        if (areOptionsSimilar(opt1, opt2) && !seen.has(cleanOpt1)) {
+        if (areOptionsSimilarForCommon(opt1, opt2) && !seen.has(cleanOpt1)) {
           common.push(opt1);
           seen.add(cleanOpt1);
         }
@@ -735,164 +644,76 @@ function findCommonOptions(stage1Options: string[], stage2Options: string[]): st
     });
   }
   
-  return common;
+  // Third pass: Range vs Discrete matching
+  if (common.length < 8) {
+    // Check discrete options in Stage 2 that are in Stage 1 ranges
+    stage2Options.forEach(opt2 => {
+      if (common.length >= 8) return;
+      
+      const cleanOpt2 = opt2.toLowerCase();
+      if (seen.has(cleanOpt2)) return;
+      if (isRange(opt2)) return; // Skip ranges
+      
+      const extractNumber = (opt: string): number | null => {
+        const match = opt.match(/(\d+(?:\.\d+)?)/);
+        return match ? parseFloat(match[1]) : null;
+      };
+      
+      const num2 = extractNumber(opt2);
+      if (num2 === null) return;
+      
+      stage1Options.forEach(opt1 => {
+        if (common.length >= 8) return;
+        
+        if (isRange(opt1)) {
+          const rangeNumbers = parseRange(opt1);
+          const isInRange = rangeNumbers.some(rangeNum => 
+            Math.abs(rangeNum - num2) < 0.01
+          );
+          
+          if (isInRange && !seen.has(cleanOpt2)) {
+            common.push(opt2);
+            seen.add(cleanOpt2);
+          }
+        }
+      });
+    });
+    
+    // Check discrete options in Stage 1 that are in Stage 2 ranges
+    if (common.length < 8) {
+      stage1Options.forEach(opt1 => {
+        if (common.length >= 8) return;
+        
+        const cleanOpt1 = opt1.toLowerCase();
+        if (seen.has(cleanOpt1)) return;
+        if (isRange(opt1)) return;
+        
+        const num1 = extractNumber(opt1);
+        if (num1 === null) return;
+        
+        stage2Options.forEach(opt2 => {
+          if (common.length >= 8) return;
+          
+          if (isRange(opt2)) {
+            const rangeNumbers = parseRange(opt2);
+            const isInRange = rangeNumbers.some(rangeNum => 
+              Math.abs(rangeNum - num1) < 0.01
+            );
+            
+            if (isInRange && !seen.has(cleanOpt1)) {
+              common.push(opt1);
+              seen.add(cleanOpt1);
+            }
+          }
+        });
+      });
+    }
+  }
+  
+  return common.slice(0, 8);
 }
 
-// Helper: Check if options are similar
-// Helper: SMART similarity check for options (handles decimals, SS grades, etc.)
-function areOptionsSmartSimilar(opt1: string, opt2: string): boolean {
-  if (!opt1 || !opt2) return false;
-  
-  const clean1 = opt1.trim().toLowerCase();
-  const clean2 = opt2.trim().toLowerCase();
-  
-  // 1. Exact match (already handled)
-  if (clean1 === clean2) return true;
-  
-  // 2. Remove spaces and compare
-  const noSpace1 = clean1.replace(/\s+/g, '');
-  const noSpace2 = clean2.replace(/\s+/g, '');
-  if (noSpace1 === noSpace2) return true;
-  
-  // 3. Handle SS grades and numbers like 430
-  // Extract numeric parts with suffixes
-  const extractNumberWithSuffix = (text: string) => {
-    const match = text.match(/(\d+(?:\.\d+)?)([a-z]*)/i);
-    if (match) {
-      return {
-        number: parseFloat(match[1]),
-        suffix: match[2] || '',
-        original: match[1] + match[2]
-      };
-    }
-    return null;
-  };
-  
-  const num1 = extractNumberWithSuffix(clean1);
-  const num2 = extractNumberWithSuffix(clean2);
-  
-  if (num1 && num2) {
-    // Check if numbers are equal (considering decimal precision)
-    const num1Str = num1.number.toString();
-    const num2Str = num2.number.toString();
-    
-    // Normalize decimals: 1.0 becomes 1, 1.00 becomes 1
-    const normalizeDecimal = (num: number) => {
-      if (num % 1 === 0) return Math.floor(num);
-      return num;
-    };
-    
-    const normNum1 = normalizeDecimal(num1.number);
-    const normNum2 = normalizeDecimal(num2.number);
-    
-    // Check if numbers are same (1.0 == 1)
-    if (normNum1 === normNum2) {
-      // Check suffixes
-      if (num1.suffix === num2.suffix) {
-        return true; // Same number and suffix
-      }
-      
-      // For SS grades: 316 and 316L are different
-      // But "SS 430" and "430" should match
-      const isSSGrade1 = clean1.includes('ss') || clean1.includes('stainless') || num1.suffix;
-      const isSSGrade2 = clean2.includes('ss') || clean2.includes('stainless') || num2.suffix;
-      
-      // If both have no suffix or only one has "ss" prefix
-      if ((!num1.suffix && !num2.suffix) || 
-          (clean1.includes('430') && clean2.includes('430')) ||
-          (clean1.includes('304') && clean2.includes('304')) ||
-          (clean1.includes('316') && clean2.includes('316'))) {
-        // Allow match for same base number
-        return true;
-      }
-    }
-  }
-  
-  // 4. Handle measurements with decimals (1.0mm vs 1mm vs 10mm)
-  const extractMeasurement = (text: string) => {
-    const match = text.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m|inch|in|ft|")?/i);
-    if (match) {
-      const value = parseFloat(match[1]);
-      const unit = match[2]?.toLowerCase() || '';
-      
-      // Convert to mm for comparison
-      let mmValue = value;
-      switch (unit) {
-        case 'cm': mmValue = value * 10; break;
-        case 'm': mmValue = value * 1000; break;
-        case 'inch':
-        case 'in':
-        case '"': mmValue = value * 25.4; break;
-        case 'ft': mmValue = value * 304.8; break;
-      }
-      
-      return {
-        value: value,
-        mmValue: mmValue,
-        unit: unit,
-        original: match[1] + (unit || '')
-      };
-    }
-    return null;
-  };
-  
-  const meas1 = extractMeasurement(clean1);
-  const meas2 = extractMeasurement(clean2);
-  
-  if (meas1 && meas2) {
-    // Check if same measurement in mm
-    const diff = Math.abs(meas1.mmValue - meas2.mmValue);
-    if (diff < 0.01) { // 0.01mm tolerance
-      return true;
-    }
-    
-    // Check if values are same (1.0 vs 1)
-    const normValue1 = meas1.value % 1 === 0 ? Math.floor(meas1.value) : meas1.value;
-    const normValue2 = meas2.value % 1 === 0 ? Math.floor(meas2.value) : meas2.value;
-    
-    // But 1.0mm and 10mm should NOT match
-    if (Math.abs(normValue1 - normValue2) > 0.1) {
-      return false;
-    }
-    
-    // If units are different, convert and compare
-    if (meas1.unit && meas2.unit && meas1.unit !== meas2.unit) {
-      // Already compared in mmValue above
-      return diff < 0.01;
-    }
-  }
-  
-  // 5. String contains check with context awareness
-  if (clean1.includes(clean2) || clean2.includes(clean1)) {
-    // But check for problematic cases:
-    // - "SS 316" contains "316" - should match
-    // - "1.0mm" contains "1mm" - should match (1.0 == 1)
-    // - "10mm" contains "1mm" - should NOT match (10 != 1)
-    
-    const containsNumber1 = clean1.match(/\d+(?:\.\d+)?/);
-    const containsNumber2 = clean2.match(/\d+(?:\.\d+)?/);
-    
-    if (containsNumber1 && containsNumber2) {
-      const num1 = parseFloat(containsNumber1[0]);
-      const num2 = parseFloat(containsNumber2[0]);
-      
-      // Normalize decimals
-      const normNum1 = num1 % 1 === 0 ? Math.floor(num1) : num1;
-      const normNum2 = num2 % 1 === 0 ? Math.floor(num2) : num2;
-      
-      // If numbers are different (10 vs 1), don't match
-      if (Math.abs(normNum1 - normNum2) > 0.1) {
-        return false;
-      }
-    }
-    
-    return true;
-  }
-  
-  return false;
-}
-
-// Helper: Check if options are similar (updated for decimals)
+// Helper: Check if options are similar (for Buyer ISQs)
 function areOptionsSimilar(opt1: string, opt2: string): boolean {
   if (!opt1 || !opt2) return false;
   
@@ -902,16 +723,42 @@ function areOptionsSimilar(opt1: string, opt2: string): boolean {
   // Exact match
   if (clean1 === clean2) return true;
   
-  // Remove spaces
+  // Remove spaces and compare
   if (clean1.replace(/\s+/g, '') === clean2.replace(/\s+/g, '')) return true;
   
-  // Use the new smart similarity function
-  return areOptionsSmartSimilar(opt1, opt2);
+  // Extract SS grade for comparison
+  const extractGrade = (text: string): string | null => {
+    const match = text.match(/(\d{3}[a-z]?)/);
+    return match ? match[1] : null;
+  };
+  
+  const grade1 = extractGrade(clean1);
+  const grade2 = extractGrade(clean2);
+  
+  if (grade1 && grade2) {
+    // SS grades must be exact same
+    return grade1 === grade2;
+  }
+  
+  // For numbers, check exact value
+  const extractNumber = (text: string): number | null => {
+    const match = text.match(/(\d+(?:\.\d+)?)/);
+    return match ? parseFloat(match[1]) : null;
+  };
+  
+  const num1 = extractNumber(clean1);
+  const num2 = extractNumber(clean2);
+  
+  if (num1 !== null && num2 !== null) {
+    // Check if numbers are same (with tolerance)
+    return Math.abs(num1 - num2) < 0.01;
+  }
+  
+  return false;
 }
-// Helper: Convert to millimeters
-// Helper: Convert to millimeters with decimal handling
+
+// Helper: Convert to millimeters (for measurement comparison)
 function convertToMM(text: string): number | null {
-  // Match numbers with optional decimals and units
   const match = text.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m|inch|in|ft|feet|")?/i);
   if (!match) return null;
   
@@ -928,43 +775,33 @@ function convertToMM(text: string): number | null {
     case 'ft':
     case 'feet': return value * 304.8;
     default: 
-      // If no unit and value < 100, assume mm
       if (value < 100) return value;
-      // If value is large with decimal, still assume mm
       return value;
   }
 }
 
-// Helper: Select top 2 specs for Buyer ISQs with improved option selection
-// Helper: Select top 2 specs for Buyer ISQs - USE COMMON OPTIONS DIRECTLY
+// Helper: Select top 2 specs for Buyer ISQs
 function selectBuyerISQs(
   commonSpecs: CommonSpecItem[], 
   stage1AllSpecs: Array<{ spec_name: string; options: string[]; input_type: string; tier: 'Primary' | 'Secondary'; priority: number }>
 ): BuyerISQItem[] {
   if (commonSpecs.length === 0) return [];
   
-  // Take top 2 specs by priority
   const topSpecs = commonSpecs.slice(0, 2);
   
   return topSpecs.map(spec => {
-    // DIRECTLY use the options from commonSpecs (which are already common between Stage 1 and Stage 2)
-    // These are EXACTLY the same options shown in Common Specifications on left side
-    const commonOptions = spec.options;
-    
-    // If we have less than 8 common options, fill with Stage 1 options
-    const resultOptions: string[] = [...commonOptions];
+    const resultOptions: string[] = [...spec.options];
     const seenOptions = new Set<string>();
     
     // Mark all common options as seen
-    commonOptions.forEach(opt => {
+    spec.options.forEach(opt => {
       if (opt && opt.trim()) {
         seenOptions.add(opt.trim().toLowerCase());
       }
     });
     
-    // If less than 8, add Stage 1 options
+    // Add Stage 1 options if needed
     if (resultOptions.length < 8) {
-      // Find matching Stage 1 spec
       const stage1Spec = stage1AllSpecs.find(s => 
         s.spec_name === spec.spec_name || 
         areSpecsSimilar(s.spec_name, spec.spec_name)
@@ -976,13 +813,9 @@ function selectBuyerISQs(
             const cleanOption = option.trim();
             const cleanOptionLower = cleanOption.toLowerCase();
             
-            // Skip "Other"
             if (cleanOptionLower === "other") return;
-            
-            // Skip if already in common options
             if (seenOptions.has(cleanOptionLower)) return;
             
-            // Add to results
             resultOptions.push(cleanOption);
             seenOptions.add(cleanOptionLower);
           }
@@ -990,7 +823,6 @@ function selectBuyerISQs(
       }
     }
     
-    // Take only first 8 options
     const finalOptions = resultOptions.slice(0, 8);
     
     return {
