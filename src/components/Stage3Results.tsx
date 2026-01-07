@@ -558,44 +558,56 @@ function normalizeSpecName(name: string): string {
 }
 
 // Helper: Find common options between Stage 1 and Stage 2
+// Helper: Find common options between Stage 1 and Stage 2 with improved matching
 function findCommonOptions(stage1Options: string[], stage2Options: string[]): string[] {
   const common: string[] = [];
-  const seen = new Set<string>();
+  const seenStage2Indices = new Set<number>();
+  const seenOptions = new Set<string>();
   
-  // Case-insensitive exact match
+  // First pass: Exact matches (case-insensitive)
   stage1Options.forEach(opt1 => {
-    const clean1 = opt1.trim().toLowerCase();
+    const cleanOpt1 = opt1.trim().toLowerCase();
     
-    const exactMatch = stage2Options.find(opt2 => 
-      opt2.trim().toLowerCase() === clean1
-    );
-    
-    if (exactMatch && !seen.has(clean1)) {
-      common.push(opt1); // Keep original formatting
-      seen.add(clean1);
-    }
+    // Find exact match in Stage 2
+    stage2Options.forEach((opt2, j) => {
+      if (seenStage2Indices.has(j)) return;
+      
+      const cleanOpt2 = opt2.trim().toLowerCase();
+      
+      // Exact string match
+      if (cleanOpt1 === cleanOpt2 && !seenOptions.has(cleanOpt1)) {
+        common.push(opt1); // Keep original formatting from Stage 1
+        seenStage2Indices.add(j);
+        seenOptions.add(cleanOpt1);
+      }
+    });
   });
   
-  // If no exact matches, try similarity
-  if (common.length === 0) {
+  // Second pass: Smart similarity matches (with decimal handling)
+  if (common.length < 8) {
     stage1Options.forEach(opt1 => {
-      if (common.length >= 5) return; // Limit to 5
+      if (common.length >= 8) return;
       
-      const clean1 = opt1.trim().toLowerCase();
-      if (seen.has(clean1)) return;
+      const cleanOpt1 = opt1.trim().toLowerCase();
+      if (seenOptions.has(cleanOpt1)) return;
       
-      const similarMatch = stage2Options.find(opt2 => 
-        areOptionsSimilar(opt1, opt2)
-      );
-      
-      if (similarMatch && !seen.has(clean1)) {
-        common.push(opt1);
-        seen.add(clean1);
-      }
+      stage2Options.forEach((opt2, j) => {
+        if (common.length >= 8) return;
+        if (seenStage2Indices.has(j)) return;
+        
+        const cleanOpt2 = opt2.trim().toLowerCase();
+        
+        // Use SMART matching with decimal handling
+        if (areOptionsSmartSimilar(opt1, opt2) && !seenOptions.has(cleanOpt1)) {
+          common.push(opt1);
+          seenStage2Indices.add(j);
+          seenOptions.add(cleanOpt1);
+        }
+      });
     });
   }
   
-  return common.slice(0, 8); // Max 8 options
+  return common
 }
 
 // Helper: Check if options are similar
