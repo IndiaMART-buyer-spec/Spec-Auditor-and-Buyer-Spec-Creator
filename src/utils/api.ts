@@ -328,11 +328,8 @@ If the MCAT name itself already explicitly defines a specification, and the same
 → then the entire specification must be marked INCORRECT.
 
 Example:
-
 MCAT Name: "304 Stainless Steel Sheet"
-
 Specification: Grade
-
 Options: "304", "316", "202"
 → INCORRECT because the grade is already fixed by the MCAT name
 
