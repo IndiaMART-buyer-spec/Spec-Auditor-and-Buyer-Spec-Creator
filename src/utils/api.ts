@@ -319,6 +319,23 @@ Task:
    Example: "2mm", "2 mm", "2.0mm" → INCORRECT (same value, different formatting)
   • Overlapping values (e.g., same measurement in multiple separate options like "1219 mm" AND "4 ft" as separate entries)
 
+ADDITIONAL CRITICAL RULE (MCAT NAME CONFLICT CHECK):
+
+If the MCAT name itself already explicitly defines a specification, and the same specification is again created with:
+• the same value, OR
+• multiple alternative values, OR
+• contradictory values
+→ then the entire specification must be marked INCORRECT.
+
+Example:
+
+MCAT Name: "304 Stainless Steel Sheet"
+
+Specification: Grade
+
+Options: "304", "316", "202"
+→ INCORRECT because the grade is already fixed by the MCAT name
+
 Rules:
 - DO NOT generate new specifications or options
 - DO NOT suggest random corrections
