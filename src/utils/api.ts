@@ -128,367 +128,71 @@ async function fetchWithRetry(
   throw new Error("Unreachable");
 }
 
-function extractJSONFromGemini(response): any {
+function extractJSONFromGemini(response) {
   try {
-    console.log("🛠️ SUPER LENIENT JSON Extraction: Starting...");
-    
     if (!response?.candidates?.length) {
-      console.warn("❌ No candidates");
+      console.warn("No candidates in response, returning null for fallback");
       return null;
     }
 
-    const parts = response.candidates[0]?.content?.parts || [];
+    const parts =
+      response.candidates[0]?.content?.parts ||
+      response.candidates[0]?.content ||
+      [];
+
     let rawText = "";
 
-    // Collect ALL text
     for (const part of parts) {
       if (typeof part.text === "string") {
         rawText += part.text + "\n";
       }
+
       if (part.json) {
-        console.log("✅ Direct JSON found");
         return part.json;
       }
     }
 
     if (!rawText.trim()) {
-      console.warn("⚠️ No text");
+      console.warn("No text content in response, returning null for fallback");
       return null;
     }
 
-    console.log(`📊 Gemini raw response length: ${rawText.length} chars`);
-    console.log("🔍 First 600 chars:");
-    console.log(rawText.substring(0, 600));
-    
-    // CRITICAL: Super aggressive extraction
-    const extracted = extractAnyJSONPossible(rawText);
-    
-    if (extracted) {
-      console.log("🎉 Extracted SOMETHING from Gemini!");
-      console.log("📦 Extracted data:", extracted);
-      return extracted;
-    }
-    
-    console.warn("⚠️ Could not extract anything");
-    return null;
+    let cleaned = rawText
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim();
 
-  } catch (error) {
-    console.error("💥 JSON extraction error:", error);
-    return null;
-  }
-}
-
-// SUPER AGGRESSIVE JSON EXTRACTOR - Kuch bhi accept karega!
-function extractAnyJSONPossible(text: string): any {
-  console.log("🔥 SUPER AGGRESSIVE: Extracting ANY JSON-like structure...");
-  
-  // Clean the text first
-  let cleaned = text.trim();
-  
-  // 🚨 CRITICAL FIX: Handle the specific incomplete "Polished" case from your logs
-  if (cleaned.includes('"Polished"') && !cleaned.includes('"Polished"]')) {
-    console.log("🔧 Detected incomplete 'Polished' array in keys, manually completing...");
-    
-    // Try to extract the partial JSON we have
-    const configMatch = cleaned.match(/"config"\s*:\s*(\{[\s\S]*?\})/);
-    const keysMatch = cleaned.match(/"keys"\s*:\s*(\[[\s\S]*)/);
-    
-    if (configMatch && keysMatch) {
-      console.log("🔧 Building complete JSON manually...");
-      
+    // Try to match array first (for audit results)
+    let arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+    if (arrayMatch) {
       try {
-        // Parse config
-        const config = JSON.parse(configMatch[1]);
-        
-        // Parse incomplete keys and complete them
-        let keysText = keysMatch[1];
-        
-        // Complete the array
-        if (!keysText.trim().endsWith(']')) {
-          // Remove anything after the incomplete array
-          const lines = keysText.split('\n');
-          const fixedLines = [];
-          
-          for (const line of lines) {
-            if (line.includes('"Polished"')) {
-              fixedLines.push(line.replace(/"Polished",?\s*$/, '"Polished"'));
-              break;
-            }
-            fixedLines.push(line);
-          }
-          
-          keysText = fixedLines.join('\n') + ']';
+        const parsed = JSON.parse(arrayMatch[0].replace(/,(\s*[\]}])/g, "$1"));
+        if (Array.isArray(parsed)) {
+          return parsed;
         }
-        
-        // Try to parse keys
-        let keys = [];
-        try {
-          keys = JSON.parse(keysText);
-        } catch (e) {
-          // If still fails, create a simple key
-          keys = [{
-            name: "Finish",
-            options: ["2B", "2R (BA)", "Polished"]
-          }];
-        }
-        
-        const result = {
-          config,
-          keys: Array.isArray(keys) ? keys : []
-        };
-        
-        console.log("✅ Manually constructed complete JSON");
-        return result;
-        
       } catch (e) {
-        console.log("❌ Manual construction failed:", e.message);
+        console.warn("Array parse failed, trying object match:", e);
       }
     }
-  }
-  
-  // Remove markdown code blocks
-  cleaned = cleaned.replace(/```json\s*/gi, '');
-  cleaned = cleaned.replace(/```\s*/gi, '');
-  cleaned = cleaned.replace(/`/g, '');
-  
-  // Try multiple extraction methods
-  
-  // Method 1: Try to find and fix main JSON object
-  const jsonMatch = cleaned.match(/\{(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\}))*\}))*\}/gs);
-  if (jsonMatch) {
-    console.log(`🔍 Found ${jsonMatch.length} JSON-like objects`);
-    for (const match of jsonMatch) {
-      try {
-        const fixed = fixAbsolutelyAnything(match);
-        const parsed = JSON.parse(fixed);
-        console.log("✅ Parsed JSON object");
-        return parsed;
-      } catch (e) {
-        console.log("🔄 Object parse failed, trying next...");
-      }
+
+    // Then try object match
+    const objMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+      cleaned = objMatch[0];
     }
-  }
-  
-  // Method 2: Try to find JSON array
-  const arrayMatch = cleaned.match(/\[[\s\S]*?\]/);
-  if (arrayMatch) {
-    console.log("🔍 Found array structure");
+
+    cleaned = cleaned.replace(/,(\s*[\]}])/g, "$1");
+
     try {
-      const fixed = fixAbsolutelyAnything(arrayMatch[0]);
-      // Wrap array in object if needed
-      const wrapped = `{"data": ${fixed}}`;
-      const parsed = JSON.parse(wrapped);
-      console.log("✅ Parsed array (wrapped in object)");
-      return parsed;
-    } catch (e) {
-      console.log("🔄 Array parse failed");
+      return JSON.parse(cleaned);
+    } catch (parseErr) {
+      console.warn("JSON parse failed, returning null for fallback:", parseErr);
+      return null;
     }
+  } catch (error) {
+    console.warn("Unexpected error in extractJSONFromGemini:", error);
+    return null;
   }
-  
-  // Method 3: Extract using string patterns (ULTIMATE FALLBACK)
-  console.log("🔄 Using ULTIMATE pattern matching...");
-  
-  // Try to extract config
-  const configMatch = cleaned.match(/config[\s\n]*:[\s\n]*(\{[\s\S]*?\})/i);
-  const keysMatch = cleaned.match(/keys[\s\n]*:[\s\n]*(\[[\s\S]*?\])/i);
-  
-  if (configMatch || keysMatch) {
-    console.log("🔍 Found config/keys patterns");
-    const result: any = {};
-    
-    if (configMatch) {
-      try {
-        const configText = configMatch[1];
-        const fixed = fixAbsolutelyAnything(configText);
-        const parsed = JSON.parse(fixed);
-        result.config = parsed;
-      } catch (e) {
-        // Extract manually
-        const nameMatch = configMatch[1].match(/name[\s\n]*:[\s\n]*["']?([^"'\n}]+)["']?/i);
-        const optionsMatch = configMatch[1].match(/options[\s\n]*:[\s\n]*\[([\s\S]*?)\]/i);
-        
-        if (nameMatch || optionsMatch) {
-          result.config = {
-            name: nameMatch ? nameMatch[1].trim() : "Unknown",
-            options: optionsMatch ? extractOptionsFromText(optionsMatch[1]) : []
-          };
-        }
-      }
-    }
-    
-    if (keysMatch) {
-      try {
-        let keysText = keysMatch[1];
-        
-        // 🚨 FIX: Complete incomplete keys array
-        if (!keysText.trim().endsWith(']')) {
-          keysText = keysText.trim();
-          if (keysText.endsWith(',')) {
-            keysText = keysText.slice(0, -1);
-          }
-          keysText += ']';
-        }
-        
-        const fixed = fixAbsolutelyAnything(keysText);
-        const parsed = JSON.parse(fixed);
-        result.keys = Array.isArray(parsed) ? parsed : [];
-      } catch (e) {
-        console.log("❌ Keys parse failed, extracting manually...");
-        // Extract keys manually
-        result.keys = extractKeysFromText(keysMatch[0]);
-      }
-    }
-    
-    if (result.config || result.keys) {
-      console.log("✅ Extracted via pattern matching");
-      return result;
-    }
-  }
-  
-  // Method 4: Last resort - parse as text
-  return parseAsText(cleaned);
-}
-// FIX ANYTHING - ULTIMATE FIXER
-function fixAbsolutelyAnything(text: string): string {
-  console.log("⚡ Applying ULTIMATE fix...");
-  
-  let fixed = text;
-  
-  // 1. Fix ALL missing commas in arrays
-  fixed = fixed.replace(/"\s*"/g, '","');          // "a" "b" -> "a","b"
-  fixed = fixed.replace(/"\s*\n\s*"/g, '","');    // "a"\n"b" -> "a","b"
-  fixed = fixed.replace(/"\s*\r\s*"/g, '","');    // "a"\r"b" -> "a","b"
-  
-  // 2. Fix keys without quotes
-  fixed = fixed.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
-  
-  // 3. Fix single quotes
-  fixed = fixed.replace(/'/g, '"');
-  
-  // 4. Fix trailing commas
-  fixed = fixed.replace(/,\s*([\]}])/g, '$1');
-  
-  // 5. Fix missing commas before }
-  fixed = fixed.replace(/("\s*}\s*")/g, '"},');
-  
-  // 6. Remove any garbage characters
-  fixed = fixed.replace(/[^\x20-\x7E\r\n]/g, ' ');
-  
-  // 7. Fix newlines in strings
-  fixed = fixed.replace(/"[^"]*"/g, match => match.replace(/\n/g, ' ').replace(/\r/g, ' '));
-  
-  // 8. Ensure proper structure
-  if (!fixed.startsWith('{') && !fixed.startsWith('[')) {
-    // Try to find start
-    const firstBrace = fixed.indexOf('{');
-    const firstBracket = fixed.indexOf('[');
-    
-    if (firstBrace !== -1) {
-      fixed = fixed.substring(firstBrace);
-    } else if (firstBracket !== -1) {
-      fixed = fixed.substring(firstBracket);
-    }
-  }
-  
-  // 9. Balance brackets
-  let openBraces = (fixed.match(/{/g) || []).length;
-  let closeBraces = (fixed.match(/}/g) || []).length;
-  
-  if (openBraces > closeBraces) {
-    fixed += '}'.repeat(openBraces - closeBraces);
-  }
-  
-  console.log(`📝 Fixed text (first 400 chars): ${fixed.substring(0, 400)}`);
-  return fixed;
-}
-
-// Extract options from broken text
-function extractOptionsFromText(text: string): string[] {
-  const options: string[] = [];
-  
-  // Match anything that looks like an option
-  const optionMatches = text.match(/["']([^"',\n\r\]]+)["']/g) || [];
-  
-  optionMatches.forEach(match => {
-    const option = match.replace(/["']/g, '').trim();
-    if (option && option.length > 0 && !option.includes('options') && !option.includes('name')) {
-      options.push(option);
-    }
-  });
-  
-  // Also look for unquoted options
-  const unquotedMatches = text.split(/[,\[\]]/);
-  unquotedMatches.forEach(part => {
-    const trimmed = part.trim();
-    if (trimmed && trimmed.length > 0 && 
-        !trimmed.includes('options') && 
-        !trimmed.includes('name') &&
-        !trimmed.includes('config') &&
-        !trimmed.includes('keys') &&
-        trimmed.length < 50) {
-      options.push(trimmed);
-    }
-  });
-  
-  return [...new Set(options)].slice(0, 10); // Remove duplicates, limit to 10
-}
-
-// Extract keys from broken text
-function extractKeysFromText(text: string): any[] {
-  const keys: any[] = [];
-  
-  // Split by potential key objects
-  const keySections = text.split(/\{/).slice(1); // Skip first empty
-  
-  keySections.forEach(section => {
-    const nameMatch = section.match(/name[\s\n]*:[\s\n]*["']?([^"'\n}]+)["']?/i);
-    const optionsMatch = section.match(/options[\s\n]*:[\s\n]*\[([\s\S]*?)\]/i);
-    
-    if (nameMatch || optionsMatch) {
-      keys.push({
-        name: nameMatch ? nameMatch[1].trim() : "Unknown",
-        options: optionsMatch ? extractOptionsFromText(optionsMatch[1]) : []
-      });
-    }
-  });
-  
-  return keys.slice(0, 3); // Max 3 keys
-}
-
-// Last resort: Parse as text
-function parseAsText(text: string): any {
-  console.log("📝 Parsing as plain text...");
-  
-  // Look for any specifications mentioned
-  const specPatterns = [
-    /(?:config|main)[\s\n]*specification[\s\n]*:?[\s\n]*["']?([^"'\n.]+)/i,
-    /(?:grade|material|thickness|size|type)[\s\n]*:?[\s\n]*["']?([^"'\n.]+)/i
-  ];
-  
-  const result: any = {
-    config: { name: "Unknown", options: [] },
-    keys: []
-  };
-  
-  // Try to find config
-  for (const pattern of specPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      result.config.name = match[1].trim();
-      break;
-    }
-  }
-  
-  // Try to find options
-  const optionMatches = text.match(/["']([^"'\n\r]+)["']/g) || [];
-  const options = optionMatches
-    .map(m => m.replace(/["']/g, '').trim())
-    .filter(opt => opt.length > 0 && opt.length < 30)
-    .slice(0, 5);
-  
-  result.config.options = options;
-  
-  return result;
 }
 
 const STAGE1_API_KEY = (import.meta.env.VITE_STAGE1_API_KEY || "").trim();
@@ -701,99 +405,6 @@ function generateFallbackStage1(): Stage1Output {
   };
 }
 
-// ==================== CORS FIXED VERSION ====================
-
-// COMPLETELY NEW fetchURL function with CORS proxy
-async function fetchURL(url: string): Promise<string> {
-  console.log(`🔗 Fetching URL: ${url}`);
-  
-  // List of reliable CORS proxies
-  const proxies = [
-    // Primary proxy - most reliable
-    `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&callback=?`,
-    // Fallback 1
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    // Fallback 2
-    `https://proxy.cors.sh/${encodeURIComponent(url)}`,
-    // Fallback 3
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-    // Fallback 4 - direct (will work for some sites)
-    url
-  ];
-
-  for (let i = 0; i < proxies.length; i++) {
-    const proxyUrl = proxies[i];
-    const isDirect = proxyUrl === url;
-    
-    console.log(`  🔄 Attempt ${i + 1}/${proxies.length}: ${isDirect ? 'Direct' : 'Proxy'}`);
-    
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
-      const response = await fetch(proxyUrl, {
-        signal: controller.signal,
-        headers: !isDirect ? {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Cache-Control': 'no-cache'
-        } : {}
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        console.warn(`  ⚠️ Attempt ${i + 1} failed with status: ${response.status}`);
-        continue;
-      }
-      
-      let html = '';
-      
-      // Parse response based on proxy type
-      if (proxyUrl.includes('allorigins.win')) {
-        const data = await response.json();
-        html = data.contents || '';
-      } else {
-        html = await response.text();
-      }
-      
-      if (!html || html.trim().length === 0) {
-        console.warn(`  ⚠️ Attempt ${i + 1} returned empty content`);
-        continue;
-      }
-      
-      // Extract text content from HTML
-      const doc = new DOMParser().parseFromString(html, "text/html");
-      
-      // Remove unnecessary elements to reduce size
-      const unwantedSelectors = 'script, style, noscript, iframe, nav, header, footer, aside, form, button, input, select, textarea, svg, img, video, audio, canvas';
-      doc.querySelectorAll(unwantedSelectors).forEach(el => el.remove());
-      
-      let text = doc.body?.textContent || '';
-      
-      // Clean up text
-      text = text
-        .replace(/\s+/g, ' ')
-        .trim()
-        .substring(0, 2000); // Limit to 2000 chars to save tokens
-      
-      console.log(`  ✅ Success! Got ${text.length} characters`);
-      return text;
-      
-    } catch (error) {
-      console.warn(`  ⚠️ Attempt ${i + 1} error:`, error.message);
-      // Continue to next proxy
-      continue;
-    }
-  }
-  
-  console.error(`❌ All attempts failed for URL: ${url}`);
-  return "";
-}
-
-// Modified extractISQWithGemini with better error handling
 export async function extractISQWithGemini(
   input: InputData,
   urls: string[]
@@ -802,50 +413,13 @@ export async function extractISQWithGemini(
     throw new Error("Stage 2 API key is not configured. Please add VITE_STAGE2_API_KEY to your .env file.");
   }
 
-  console.log("🚀 Stage 2: Starting ISQ extraction");
-  console.log(`📋 Product: ${input.mcats.map(m => m.mcat_name).join(', ')}`);
-  console.log(`🔗 URLs to process: ${urls.length}`);
-  
-  // Wait a bit before starting (reduced from 7000 to 2000ms)
-  console.log("⏳ Waiting 2 seconds before starting...");
-  await sleep(2000);
+  console.log("Waiting before ISQ extraction to avoid API overload...");
+  await sleep(7000);
+
+  const urlContents = await Promise.all(urls.map(fetchURL));
+  const prompt = buildISQExtractionPrompt(input, urls, urlContents);
 
   try {
-    // Fetch URLs with better error handling
-    console.log("🌐 Fetching URL contents...");
-    const urlContentsPromises = urls.map(async (url, index) => {
-      console.log(`  📡 [${index + 1}/${urls.length}] Fetching: ${url}`);
-      const content = await fetchURL(url);
-      return { url, content, index };
-    });
-
-    const results = await Promise.all(urlContentsPromises);
-    
-    // Process results
-    const urlContents: string[] = [];
-    const successfulFetches: number[] = [];
-    
-    results.forEach(result => {
-      urlContents.push(result.content);
-      if (result.content && result.content.length > 0) {
-        successfulFetches.push(result.index + 1);
-      }
-    });
-    
-    console.log(`📊 Fetch results: ${successfulFetches.length}/${urls.length} successful`);
-    console.log(`✅ Successful URLs: ${successfulFetches.join(', ')}`);
-    
-    // If no content fetched, use fallback
-    if (successfulFetches.length === 0) {
-      console.warn("⚠️ No content fetched, using fallback data");
-      return generateFallbackStage2();
-    }
-    
-    // Build prompt with fetched content
-    const prompt = buildISQExtractionPrompt(input, urls, urlContents);
-    
-    console.log("🤖 Calling Gemini API...");
-    
     const response = await fetchWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${STAGE2_API_KEY}`,
       {
@@ -873,12 +447,9 @@ export async function extractISQWithGemini(
     );
 
     const data = await response.json();
-    console.log("✅ Gemini API response received");
-    
     let parsed = extractJSONFromGemini(data);
 
     if (parsed && parsed.config && parsed.config.name) {
-      console.log(`🎉 Success! Config: ${parsed.config.name}`);
       return {
         config: parsed.config,
         keys: parsed.keys || [],
@@ -888,27 +459,23 @@ export async function extractISQWithGemini(
 
     const textContent = extractRawText(data);
     if (textContent) {
-      console.log("🔄 Trying text-based parsing...");
       const fallbackParsed = parseStage2FromText(textContent);
       if (fallbackParsed && fallbackParsed.config && fallbackParsed.config.name) {
-        console.log("✅ Parsed ISQ from text fallback");
+        console.log("Parsed ISQ from text fallback");
         return fallbackParsed;
       }
     }
 
-    console.warn("⚠️ Using fallback Stage 2 data");
     return generateFallbackStage2();
-    
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error("❌ Stage 2 API error:", errorMsg);
 
     if (errorMsg.includes("429") || errorMsg.includes("quota")) {
-      console.error("🚫 Stage 2 API Key quota exhausted or rate limited");
+      console.error("Stage 2 API Key quota exhausted or rate limited");
       throw new Error("Stage 2 API key quota exhausted. Please check your API limits.");
     }
 
-    console.warn("⚠️ Returning fallback data due to error");
+    console.warn("Stage 2 API error:", error);
     return generateFallbackStage2();
   }
 }
@@ -1004,6 +571,100 @@ function generateFallbackStage2(): { config: ISQ; keys: ISQ[]; buyers: ISQ[] } {
   };
 }
 
+function extractJSON(text: string): string | null {
+  text = text.replace(/```json|```/gi, "").trim();
+
+  text = text.trim();
+  if (text.startsWith('{')) {
+    try {
+      JSON.parse(text);
+      return text;
+    } catch {
+      // Continue to other methods
+    }
+  }
+
+  let codeBlockMatch = text.match(/```json\s*\n?([\s\S]*?)\n?```/);
+  if (codeBlockMatch) {
+    const extracted = codeBlockMatch[1].trim();
+    try {
+      JSON.parse(extracted);
+      return extracted;
+    } catch (e) {
+      console.error("Failed to parse JSON from json code block:", e);
+    }
+  }
+
+  codeBlockMatch = text.match(/```\s*\n?([\s\S]*?)\n?```/);
+  if (codeBlockMatch) {
+    const extracted = codeBlockMatch[1].trim();
+    try {
+      JSON.parse(extracted);
+      return extracted;
+    } catch (e) {
+      console.error("Failed to parse JSON from code block:", e);
+    }
+  }
+
+  let braceCount = 0;
+  let inString = false;
+  let escapeNext = false;
+  let startIdx = -1;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"' && !escapeNext) {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (char === '{') {
+        if (braceCount === 0) startIdx = i;
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0 && startIdx !== -1) {
+          const jsonStr = text.substring(startIdx, i + 1).trim();
+          try {
+            JSON.parse(jsonStr);
+            return jsonStr;
+          } catch (e) {
+            console.error("Failed to parse extracted JSON:", e);
+            startIdx = -1;
+          }
+        }
+      }
+    }
+  }
+
+  console.error("No JSON found in response. Raw response:", text.substring(0, 1000));
+  return null;
+}
+
+async function fetchURL(url: string): Promise<string> {
+  try {
+    const response = await fetch(url);
+    const html = await response.text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    return doc.body.textContent || "";
+  } catch {
+    return "";
+  }
+}
+
+
 function buildISQExtractionPrompt(
   input: InputData,
   urls: string[],
@@ -1054,7 +715,10 @@ RESPOND WITH PURE JSON ONLY - Nothing else. No markdown, no explanation, just ra
 }`;
 }
 
-// Rest of the functions remain EXACTLY THE SAME
+// ============================================
+// STAGE 3 BUYER ISQs SELECTION - IMPROVED VERSION
+// ============================================
+
 export function generateBuyerISQsFromSpecs(
   uploadedSpecs: { spec_name: string; options: string[]; tier?: string }[],
   stage2ISQs: { config: ISQ; keys: ISQ[] }
@@ -1285,6 +949,8 @@ export function selectStage3BuyerISQs(
   return buyerISQs;
 }
 
+
+// IMPROVED FUNCTION TO GET OPTIMIZED OPTIONS
 function getOptimizedBuyerISQOptions(
   stage1Options: string[], 
   stage2Options: string[],
@@ -1353,6 +1019,22 @@ function getOptimizedBuyerISQOptions(
     }
   }
 
+  // Step 4: Add remaining Stage 2 options if still needed
+ // if (result.length < 8) {
+   // console.log('   Step 4: Adding remaining Stage 2 options...');
+   // const remainingStage2 = stage2Options.filter(opt => {
+    //  const cleanOpt = opt.trim().toLowerCase();
+     // return !seen.has(cleanOpt);
+  //  });
+    
+   // const toAdd = Math.min(8 - result.length, remainingStage2.length);
+   // for (let i = 0; i < toAdd; i++) {
+    //  result.push(remainingStage2[i]);
+    //  seen.add(remainingStage2[i].trim().toLowerCase());
+     // console.log(`     ➕ Stage 2: "${remainingStage2[i]}"`);
+   // }
+ // }
+
   // Step 5: Ensure no duplicates in final result
   const finalResult: string[] = [];
   const finalSeen = new Set<string>();
@@ -1369,6 +1051,7 @@ function getOptimizedBuyerISQOptions(
   return finalResult.slice(0, 8);
 }
 
+// STRONG OPTION SIMILARITY CHECK
 function areOptionsStronglySimilar(opt1: string, opt2: string): boolean {
   if (!opt1 || !opt2) return false;
   
@@ -1451,6 +1134,10 @@ function areOptionsStronglySimilar(opt1: string, opt2: string): boolean {
   
   return false;
 }
+
+// ============================================
+// COMPARE RESULTS FUNCTION
+// ============================================
 
 export function compareResults(
   chatgptSpecs: Stage1Output,
@@ -1539,6 +1226,7 @@ export function compareResults(
   };
 }
 
+// Helper functions
 function extractAllSpecsWithOptions(specs: Stage1Output): Array<{ spec_name: string; options: string[] }> {
   const allSpecs: Array<{ spec_name: string; options: string[] }> = [];
   
@@ -1581,10 +1269,4 @@ function findCommonOptions(options1: string[], options2: string[]): string[] {
   });
   
   return common;
-}
-
-// Missing function from original code
-function buildStage1Prompt(input: InputData): string {
-  // This function should be implemented based on your Stage 1 requirements
-  return `Stage 1 prompt for: ${JSON.stringify(input)}`;
 }
