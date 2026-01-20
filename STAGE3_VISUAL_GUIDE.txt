@@ -1,0 +1,245 @@
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                    STAGE 3 - VISUAL LAYOUT GUIDE                              ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+FULL PAGE LAYOUT:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Stage 3: Final Specifications                                               │
+│ Common Specifications & Buyer ISQs                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────┬────────────────────────────────────┐
+│                                    │                                    │
+│    COMMON SPECIFICATIONS           │       BUYER ISQs                   │
+│         (LEFT PANEL)               │      (RIGHT PANEL)                 │
+│                                    │                                    │
+│  4 Common Specifications           │  2 Buyer ISQs                      │
+│  True overlap (Stage 1 & 2)        │  Enhanced with Stage 1 options     │
+│                                    │                                    │
+│  ┌──────────────────────────────┐  │  ┌──────────────────────────────┐  │
+│  │ Specification │ Category│Opts│  │  │ # │ Specification │ Options  │  │
+│  ├──────────────────────────────┤  │  ├──────────────────────────────┤  │
+│  │ Grade  │ Primary  │ 304 316  │  │  │ 1 │ Grade         │ 304 316  │  │
+│  │        │          │ MS       │  │  │   │               │ 430 201  │  │
+│  ├──────────────────────────────┤  │  ├──────────────────────────────┤  │
+│  │ Finish │ Primary  │ Polished │  │  │ 2 │ Finish        │ Polished │  │
+│  ├──────────────────────────────┤  │  │   │               │ Matte    │  │
+│  │ Type   │ Secondary│ A B      │  │  └──────────────────────────────┘  │
+│  ├──────────────────────────────┤  │                                    │
+│  │ Material│ Primary │ Steel    │  │  [ Show All Buyer ISQs ]          │
+│  └──────────────────────────────┘  │                                    │
+│                                    │                                    │
+│  Scrollable (600px max)            │  Scrollable (600px max)            │
+│                                    │                                    │
+└────────────────────────────────────┴────────────────────────────────────┘
+
+
+COMMON SPECIFICATIONS TABLE DETAIL:
+┌────────────────────────────────────────────────────────────────────────────┐
+│ Specification    │ Category      │ Common Options                         │
+├────────────────────────────────────────────────────────────────────────────┤
+│ Grade            │ [Primary]     │ ┌─────┐ ┌─────┐ ┌──────┐             │
+│                  │               │ │ 304 │ │ 316 │ │ MS   │             │
+│                  │               │ └─────┘ └─────┘ └──────┘             │
+├────────────────────────────────────────────────────────────────────────────┤
+│ Finish           │ [Secondary]   │ (no common options)                    │
+├────────────────────────────────────────────────────────────────────────────┤
+│ Type             │ [Primary]     │ ┌─────┐ ┌─────┐                      │
+│                  │               │ │  A  │ │  B  │                      │
+│                  │               │ └─────┘ └─────┘                      │
+├────────────────────────────────────────────────────────────────────────────┤
+│ Material         │ [Primary]     │ ┌────────┐ ┌──────────┐               │
+│                  │               │ │ Steel  │ │Aluminum  │               │
+│                  │               │ └────────┘ └──────────┘               │
+└────────────────────────────────────────────────────────────────────────────┘
+
+
+BUYER ISQs TABLE DETAIL:
+┌──────────────────────────────────────────────────────────────────────────┐
+│ # │ Specification │ Options                                              │
+├──────────────────────────────────────────────────────────────────────────┤
+│ 1 │ Grade         │ ┌─────┐ ┌─────┐ ┌────┐ ┌─────┐ ┌─────┐ ┌─────┐  │
+│   │               │ │ 304 │ │ 316 │ │ MS │ │ 430 │ │ 201 │ │ 202 │  │
+│   │               │ └─────┘ └─────┘ └────┘ └─────┘ └─────┘ └─────┘  │
+│   │               │ ┌────┐ ┌────┐                                    │
+│   │               │ │ GI │ │ AL │                                    │
+│   │               │ └────┘ └────┘ (max 8 options total)              │
+├──────────────────────────────────────────────────────────────────────────┤
+│ 2 │ Finish        │ ┌──────────┐ ┌────────┐ ┌──────────┐             │
+│   │               │ │ Polished │ │ Matte  │ │ Brushed  │             │
+│   │               │ └──────────┘ └────────┘ └──────────┘             │
+│   │               │ ┌────────────┐ (added from Stage 1)               │
+│   │               │ │ Hot Rolled │                                   │
+│   │               │ └────────────┘                                   │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+DATA FLOW VISUALIZATION:
+
+INPUT:
+┌─────────────────┐      ┌──────────────┐
+│  Stage 1 Specs  │      │ Stage 2 ISQs │
+└────────┬────────┘      └──────┬───────┘
+         │                       │
+         └───────────┬───────────┘
+                     ▼
+        ┌────────────────────────┐
+        │  findCommonSpecsWith    │
+        │       Gemini()          │
+        └────────────┬───────────┘
+                     ▼
+        ┌────────────────────────┐
+        │ findCommonSpecsWithGem  │
+        │      iniAPI() - TEXT    │
+        │      FORMAT OUTPUT      │
+        └────────────┬───────────┘
+                     ▼
+        ┌────────────────────────┐
+        │parseCommonSpecsFromText│
+        │  (Parse pipe-separated)│
+        └────────────┬───────────┘
+                     ▼
+        ┌────────────────────────┐
+        │deduplicateCommonSpecs()│
+        │  Remove dups, merge    │
+        │  options               │
+        └────────────┬───────────┘
+                     ▼
+        ┌────────────────────────┐
+        │  Common Specs Panel    │
+        │  (TABLE FORMAT)        │
+        └────────────┬───────────┘
+                     ▼
+        ┌────────────────────────┐
+        │ generateBuyerISQsWith  │
+        │    Gemini()            │
+        │ (First 2 specs, max 8) │
+        └────────────┬───────────┘
+                     ▼
+        ┌────────────────────────┐
+        │ deduplicateOptions()   │
+        │ Remove duplicate opts  │
+        └────────────┬───────────┘
+                     ▼
+        ┌────────────────────────┐
+        │  Buyer ISQs Panel      │
+        │  (TABLE FORMAT)        │
+        └────────────────────────┘
+
+OUTPUT:
+✓ All Common Specs (deduplicated)
+✓ Buyer ISQs (first 2, max 8 options each)
+✓ No duplicate specs
+✓ No duplicate options
+✓ Common options first
+
+
+DEDUPLICATION EXAMPLE:
+
+Input Specs:
+┌─────────────────────────────────────┐
+│ Grade (Primary)        │ 304, 316    │
+│ Material (Primary)     │ Steel       │
+│ Grade (Primary)        │ 430, MS     │ ← DUPLICATE
+│ grade (Primary)        │ 201         │ ← DUPLICATE
+└─────────────────────────────────────┘
+
+Processing:
+1. Normalize names: "Grade" "Material" "Grade" "grade"
+2. Find duplicates: Grade appears 3 times
+3. Merge: Grade has [304, 316, 430, MS, 201]
+4. Deduplicate options: [304, 316, 430, MS, 201]
+
+Output Specs:
+┌─────────────────────────────────────┐
+│ Grade (Primary)        │ 304, 316,   │
+│                        │ 430, MS, 201│
+│ Material (Primary)     │ Steel       │
+└─────────────────────────────────────┘
+
+Result: 2 specs instead of 4 (deduplicated)
+
+
+COLOR SCHEME:
+
+Common Specifications Panel (Left):
+┌─────────────────────────────────────┐
+│ Background: Blue gradient (50-100)  │
+│ Border: Blue-300                    │
+│ Header: Blue-100 background         │
+│ Title: Blue-900                     │
+│ Rows: Alternating white/blue-50     │
+│ Badge: Blue-100, Blue-800 text      │
+│ Options: Blue-50 bg, Blue-300 border│
+└─────────────────────────────────────┘
+
+Buyer ISQs Panel (Right):
+┌─────────────────────────────────────┐
+│ Background: Orange gradient (50-100)│
+│ Border: Amber-300                   │
+│ Header: Amber-100 background        │
+│ Title: Amber-900                    │
+│ Rows: Alternating white/amber-50    │
+│ Badge: Amber-100, Amber-800 text    │
+│ Options: Amber-50 bg, Amber-300 br  │
+└─────────────────────────────────────┘
+
+
+RESPONSIVE BEHAVIOR:
+
+Desktop (> 1024px):
+┌────────────────────┬────────────────────┐
+│ Common Specs (50%)  │ Buyer ISQs (50%)    │
+│                    │                    │
+│ Full width tables   │ Full width tables   │
+│                    │                    │
+└────────────────────┴────────────────────┘
+
+Tablet (768-1024px):
+┌─────────────────────────────────────┐
+│  Common Specs (100%)                │
+│  Full width table                   │
+├─────────────────────────────────────┤
+│  Buyer ISQs (100%)                  │
+│  Full width table                   │
+└─────────────────────────────────────┘
+
+Mobile (< 768px):
+┌─────────────────────────────────────┐
+│  Common Specs (100%)                │
+│  Scrollable table                   │
+├─────────────────────────────────────┤
+│  Buyer ISQs (100%)                  │
+│  Scrollable table                   │
+└─────────────────────────────────────┘
+
+
+INTERACTION STATES:
+
+Table Rows:
+┌─ Normal ──────────────────────────────┐
+│ Regular text, normal colors           │
+└───────────────────────────────────────┘
+
+┌─ Hover ───────────────────────────────┐
+│ Slightly lighter background           │
+│ Cursor pointer on options             │
+└───────────────────────────────────────┘
+
+Button States:
+┌─ Normal ──────────────────────────────┐
+│ bg-amber-100, text-amber-800          │
+│ "Show All N Buyer ISQs"               │
+└───────────────────────────────────────┘
+
+┌─ Hover ───────────────────────────────┐
+│ bg-amber-200 (lighter)                │
+│ Cursor pointer                        │
+└───────────────────────────────────────┘
+
+┌─ Active (expanded) ───────────────────┐
+│ bg-amber-100                          │
+│ "Show Less"                           │
+│ All ISQs displayed                    │
+└───────────────────────────────────────┘
+
